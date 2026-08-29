@@ -13,20 +13,23 @@ The design intent comes from four source documents, preserved verbatim in [`docs
 
 ## 2. Destination
 
-A single operator run takes a planted code smell from *"SonarQube Cloud found it"* to *"PR open, re-scan clean, Jira transitioned, Teams notified"* — and one click puts it all back.
-
-Concretely, the loop is:
+**Restated by Nick on 2026-08-29, after the sandbox was built.** The unit of work is a pull request, not a backlog campaign. A PR that introduces code smells gets them fixed on its own branch, and cannot merge until the scan is green.
 
 ```
-SonarQube Cloud scan
-    → recon: normalize findings, fingerprint them
-    → plan: group them, create/dedupe Jira issues, emit plan JSON
-    → execute: branch, codemod-or-Claude fix, build, test, re-scan
-    → verify: PR opened, Jira transitioned, Teams notified
-    → reset: one click back to v0-pristine
+PR opened or updated
+    → scan: SonarQube Cloud analyses the PR branch
+    → itrack: OPTIONAL — Jira ticket per group, rule suggestion attached,
+              Jira key written back onto the Sonar finding
+    → remediate: container pulls the PR branch, fixes every eligible finding
+                 in one pass, exactly one unit test per fix, builds, tests
+    → push: commit lands on the PR branch → re-scan fires automatically
+    → gate: all green → merge allowed; anything refused → escalate, blocked
+    → reset: one click back to the pristine baseline
 ```
 
-Every arrow is gated. No stage runs on the assumption the previous one worked.
+Every arrow is gated. No stage runs on the assumption the previous one worked. The loop closes on itself — the push is what re-triggers the scan — so the guards against self-triggering are load-bearing rather than defensive.
+
+The full decision, what it supersedes in the source spec, and the risks it introduces are in [`docs/decisions/pr-remediation-flow.md`](decisions/pr-remediation-flow.md).
 
 ## 3. Decisions locked during charting
 
