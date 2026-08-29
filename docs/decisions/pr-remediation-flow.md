@@ -63,6 +63,24 @@ The cost is attribution: when a batched build fails, which of the eleven fixes b
 
 `phix_sonar-sandbox-app`. Stable across re-scans, groups every ticket from one codebase, and therefore usable for dedupe — which an analysis ID, unique per run, would not be.
 
+### 6. Fork pull requests are out of scope
+
+Nick: *"then don't make fork PRs."* Same-repo branches only.
+
+This is not a limitation being tolerated, it is a boundary being drawn, and it settles a security question at the same time.
+
+**Forks cannot work on the `pull_request` trigger.** GitHub does not pass repository secrets to a workflow run triggered by a PR from a fork, and `GITHUB_TOKEN` is read-only there. So a fork PR cannot even be *scanned* — `SONAR_TOKEN` is absent — let alone pushed to. The failure is not at step 6; it is at step 1.
+
+**The obvious workaround is `pull_request_target`, and it is refused.** That trigger runs in the base repository's context *with* secrets and a write token, against code the contributor controls. Reaching for it to "support forks" hands an untrusted PR author the credentials for the repository it is scanning, which is a well-known escalation path and precisely the wrong trade for a convenience. Not supporting forks is therefore the safe answer as well as the simple one.
+
+**What the workflows must do instead of failing oddly.** A fork PR must be detected and skipped *explicitly*, with a comment saying the pipeline does not run on forks and why. A workflow that silently does nothing on a fork is indistinguishable from a workflow that ran and found nothing — the exact failure mode this system is built against.
+
+```
+head.repo.full_name != base.repo.full_name  →  skip, comment, neutral status
+```
+
+The status must be **neutral or failing, never green**. A fork PR that reports a passing Sonar gate because the scan never ran is worse than no gate.
+
 ## What this changes against the charted design
 
 | | Charted | Now |
@@ -94,8 +112,6 @@ This inverts work completed earlier today under [#9](https://github.com/phix/son
 
 ## Open risks
 
-**Fork PRs.** Pushing a fix onto a contributor's branch requires `maintainer_can_modify`, and `GITHUB_TOKEN` cannot write to a fork at all. In the sandbox both repos are Nick's, so this never fires — and it will be the first thing to break at the office, where external or cross-org contributions exist. The fallback is a stacked PR into the contributor's branch. Recorded now so it is a known limit rather than a surprise.
-
 **Self-triggering.** The bot's own push fires `synchronize`, which re-runs remediation. Guarded three ways: skip when the head commit is the bot's *and* no eligible finding remains; a per-PR attempt counter capped per spec §15; and hard failure rather than silent stop when the cap is hit.
 
 **The rule suggestion needs authentication.** Verified 2026-08-29: `api/rules/show` returns rule metadata anonymously — name, severity, effort, clean-code attribute — but `descriptionSections` and `htmlDesc` come back **empty** without a token. So *"add the sonar suggestion to the jira ticket"* cannot be built or tested until `SONAR_TOKEN_READ` exists. Whether the full text is available even with a token is unconfirmed; the `requiredEntitlements` field on the rule payload suggests it may be plan-gated. If it is, the fallback is the finding's own `message` plus a link to the public rule documentation.
@@ -109,4 +125,6 @@ Two properties of this flow travel better than the campaign model did:
 - It needs **no backlog triage**. Findings are bounded by the PR diff, so adoption is per-team and incremental rather than a sweep of an existing codebase.
 - The merge gate is the natural enforcement point teams already understand, so nothing new has to be socialised.
 
-The thing that travels worst is step 6. Writing to a contributor's branch is a cultural decision as much as a technical one, and some teams will want the stacked-PR shape instead. Keep both paths available.
+The thing that travels worst is step 6, and the office needs to hear the constraint early rather than discover it: **this flow only works on same-repo pull requests.** That is fine, and usually invisible, for internal teams working on branches of the repository itself. It breaks completely for any repository that takes contributions from forks — open source, cross-org, or contractors without write access.
+
+Do not let anyone "solve" that with `pull_request_target`. The reasoning is in decision 6, and it is the single most likely place for a well-meaning adopter to introduce a credential-disclosure bug while believing they are extending coverage. If a repository genuinely needs fork support, the answer is a separate, deliberately designed flow with no secrets in the untrusted context — not a trigger swap.
