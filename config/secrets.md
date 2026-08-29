@@ -19,6 +19,8 @@ Where every credential lives, and why it lives there. **No secret values appear 
 | `JIRA_PROJECT_KEY` | `SONAR` |
 | Jira cloud id | `8cda2610-e1e4-4253-ab1f-066e94b3ae51` |
 | Jira project statuses | To Do · In Progress · In Review · Done |
+| `SONAR_ORG` | `phix` (SonarQube Cloud, Nick is Admin, single org) |
+| `SONAR_PROJECT_KEY` | expected `phix_sonar-sandbox-app` — **not yet real**, created when the sandbox repo is imported (issue #10) |
 | Automation repo | `phix/sonar-remediation-automation` |
 | Sandbox repo | `phix/sonar-sandbox-app` (not yet created — issue #7) |
 
@@ -78,6 +80,18 @@ gh secret set JIRA_API_TOKEN --repo phix/sonar-remediation-automation
 Verified 2026-08-29 that the current `gh` token can set and delete both secrets and variables on this repo.
 
 `gh secret set` reads from stdin or prompts, so the value never enters your shell history. Set them once; they are write-only afterwards — GitHub will not show them back, which is why the Keychain copy matters for local runs.
+
+## What is not obtainable yet
+
+Three of these cannot exist until earlier tickets land. They are gated, not forgotten — `sync-secrets.sh` skips anything unset, so re-run it as each becomes available.
+
+| Secret | Blocked on |
+|---|---|
+| `TEAMS_WEBHOOK_URL` | issue #2 — the Power Automate flow does not exist yet |
+| `SONAR_PROJECT_KEY` | issue #10 — no SonarCloud project until the sandbox repo is imported |
+| `SANDBOX_REPO_TOKEN` | issue #7 — the sandbox repo does not exist yet |
+
+`ANTHROPIC_API_KEY` is only needed once the Claude fallback in the fix engine is built; it is listed early so the sync is a single pass later.
 
 ## Rotation and hygiene
 
