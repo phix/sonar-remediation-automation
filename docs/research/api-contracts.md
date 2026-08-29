@@ -166,10 +166,16 @@ The one thing worth Nick's attention: if his office SonarQube is configured MQR-
 
 | Property | Value |
 |---|---|
-| Base | `https://<site>.atlassian.net/rest/api/{2,3}` |
+| Base | `https://1337software.atlassian.net/rest/api/{2,3}` |
+| Project key | `SONAR` (Kanban, team-managed, created 2026-08-29) |
+| Cloud id | `8cda2610-e1e4-4253-ab1f-066e94b3ae51` |
 | Auth | HTTP Basic: `base64(email:api_token)` |
 | Header | `Authorization: Basic <b64>` |
 | Token source | [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens) |
+
+A **second site exists** on this account — `phix.atlassian.net`, cloud id `fed0936f-…`. It is not the one to use, and pointing at it yields an empty project list rather than an error.
+
+Note also that display name and key differ on the pre-existing projects: the project *named* "DEV" has key **`KAN`**, and the example project is `SAM1`. Never infer a key from a project's name.
 
 Store `JIRA_BASE_URL`, `JIRA_USER_EMAIL`, `JIRA_API_TOKEN` as GitHub secrets. Note the email is itself a credential half here — keep it in secrets, not in workflow YAML.
 
@@ -234,9 +240,15 @@ Two consequences worth planning for: only transitions *valid from the current st
 
 [`jira_workflow_state_model.md`](../source/jira_workflow_state_model.md) §7 specifies **twelve** statuses including `Auto Remediation Running`, `Fixed Pending Verification`, and `Superseded`.
 
-A default Jira Cloud project ships roughly **three**: To Do, In Progress, Done.
+**Confirmed 2026-08-29** against the real project created for this effort — `SONAR` on `1337software.atlassian.net`, Kanban template, **team-managed**:
 
-**UNVERIFIED, and worth checking early:** team-managed projects generally allow adding statuses from board settings without site-admin rights, which would make the fuller model reachable on a free site; company-managed projects need workflow administration. The verification script reports the project style and the actual available statuses.
+```
+To Do · In Progress · In Review · Done
+```
+
+**Four statuses, not three.** `In Review` is a genuine gain: it gives `Fixed Pending Verification` a status of its own rather than overloading `In Progress`, which is the single most important distinction in the model — it is the state where a patch exists but the re-scan has not yet confirmed it.
+
+Because the project is **team-managed**, more statuses can be added from board settings without site-admin rights. Worth knowing, but not worth doing: the compression below already covers the model, and every status added is one more thing the office's Jira must also have for the automation to port cleanly.
 
 The realistic strategy either way — and the one to recommend to the office — is **compress status, preserve detail in labels**:
 
@@ -244,7 +256,7 @@ The realistic strategy either way — and the one to recommend to the office —
 |---|---|---|
 | Open, Planned | To Do | label `sonar-planned` |
 | In Progress, Auto Remediation Running | In Progress | label `sonar-auto-running` |
-| Fixed Pending Verification | In Progress | label `sonar-pending-verification` |
+| **Fixed Pending Verification** | **In Review** | label `sonar-pending-verification` |
 | Verified | Done | label `sonar-verified` |
 | Blocked, Escalated | In Progress | label `sonar-escalated` + comment |
 | Superseded | Done | label `sonar-superseded` + link comment |
