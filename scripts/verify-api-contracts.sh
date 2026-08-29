@@ -38,6 +38,16 @@ need() {
 
 command -v jq >/dev/null || { echo "jq is required"; exit 1; }
 
+# Load credentials without being handed them: Keychain first, then .env.
+# Anything already exported in the environment wins over both.
+_here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -x "$_here/scripts/secrets.sh" ] && command -v security >/dev/null 2>&1; then
+  eval "$("$_here/scripts/secrets.sh" export 2>/dev/null || true)"
+fi
+if [ -f "$_here/.env" ]; then
+  set -a; . "$_here/.env"; set +a
+fi
+
 mkdir -p "$(dirname "$OUT")"
 {
   echo "# API contract verification — live results"
