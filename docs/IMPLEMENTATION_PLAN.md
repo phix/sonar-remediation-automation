@@ -1,6 +1,6 @@
 # Sonar Remediation Sandbox — Implementation Plan
 
-**Status:** charted 2026-08-29 · 1 of 11 tickets resolved · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
+**Status:** building · 6 of 12 tickets resolved · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
 **Owner:** Nick Ratliff (`phix`) · **Feedback channel:** Microsoft Teams
 
 ---
@@ -73,7 +73,29 @@ Researched and largely verified against live services ([full write-up](research/
 
 Also decided: fingerprint findings on Sonar's content `hash` rather than the line number, a deliberate deviation from spec §8.1 — line numbers shift on every unrelated edit above a finding, which would make the same defect re-fingerprint constantly.
 
-### 4.4 Scope narrowed to code smells
+### 4.4 Five obvious rule choices would never have fired
+
+The smell catalogue (#4) was built by looking every candidate rule up against the live SonarQube Cloud rules API rather than choosing rules that seemed apt. Five plausible picks turned out to be **real rules that are not activated in the default *Sonar way* profile**, so a scan would never have reported them:
+
+| Rule | What it catches |
+|---|---|
+| `javascript:S1192` | String literals should not be duplicated |
+| `javascript:S125` | Sections of code should not be commented out |
+| `javascript:S1172` | Unused function parameters should be removed |
+| `javascript:S138` | Functions should not have too many lines |
+| `typescript:S1481` | Unused local variables — active for JavaScript, **not** for TypeScript |
+
+Any of them would have failed the #10 scan gate for a bookkeeping reason rather than a real one, and the last is the nastiest: the same rule number behaves differently per language, so "it works in the API module" would not have transferred to the web module.
+
+Severities held surprises too. `javascript:S3504` (*use let or const, not var*) is **CRITICAL**, not the MINOR that "modernise a keyword" suggests. [`scripts/verify-rule-keys.sh`](../scripts/verify-rule-keys.sh) now checks all three properties — existence, activation in the default profile, and the severity that profile actually assigns — reading the API anonymously, so it runs before `SONAR_TOKEN` exists.
+
+### 4.5 One planted smell can produce two findings
+
+An unused `const` raises **both** `S1481` (unused variable) and `S1854` (useless assignment) on the same line. Three of the catalogue's four `S1854` findings are co-located with an `S1481` in exactly this way, and a single codemod clears both.
+
+This matters beyond bookkeeping. A catalogue built on the assumption of one-finding-per-planted-smell would show phantom "unexpected" findings at the #10 gate — which is designed to treat a mismatch as a real defect. The catalogue is therefore **generated from observed findings**, never hand-written, and carries 29 finding-shaped entries rather than 23 construct-shaped ones.
+
+### 4.6 Scope narrowed to code smells
 
 Bugs and vulnerabilities are not targets for now. Recon filters `types=CODE_SMELL` (verified working). This is a current scope rather than a permanent exclusion, and it matches source spec §10's own advice to begin with low-risk code smells. It changes the sandbox catalogue: the deliberately-non-automatable examples become code smells *sitting in sensitive paths*, which is the more faithful test anyway — eligibility policy refuses work by location and risk, not by whether something is technically a smell.
 
@@ -85,29 +107,35 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 
 | # | Ticket | Outcome |
 |---|---|---|
-| [5](https://github.com/phix/sonar-remediation-automation/issues/5) | Map the SonarQube Cloud and Jira Cloud API contracts | [`docs/research/api-contracts.md`](research/api-contracts.md) — see §4.3 below |
+| [3](https://github.com/phix/sonar-remediation-automation/issues/3) | Grant the workflow token scope | `workflow` and `read:project` granted; workflow files now push |
+| [5](https://github.com/phix/sonar-remediation-automation/issues/5) | Map the SonarQube Cloud and Jira Cloud API contracts | [`docs/research/api-contracts.md`](research/api-contracts.md) — see §4.3 |
+| [7](https://github.com/phix/sonar-remediation-automation/issues/7) | Create the sandbox repo and decide cross-repo auth | [`docs/decisions/cross-repo-auth.md`](decisions/cross-repo-auth.md) |
+| [8](https://github.com/phix/sonar-remediation-automation/issues/8) | Build the clean Angular + Express sandbox app | `phix/sonar-sandbox-app`, 20 tests green |
+| [9](https://github.com/phix/sonar-remediation-automation/issues/9) | Inject the smell catalogue and tag `v0-pristine` | 29 findings planted, tag → `a836d3d`, build and tests still green |
+| [11](https://github.com/phix/sonar-remediation-automation/issues/11) | Run the API contract verification against live accounts | 11/11 pass |
 
-**Takeable now (no blockers):**
+**Awaiting Nick's yes or no** — the work and its evidence are done; these are decisions, not tasks:
 
-| # | Ticket | Type |
+| # | Ticket | What is waiting |
 |---|---|---|
-| [2](https://github.com/phix/sonar-remediation-automation/issues/2) | Prove the Microsoft Teams feedback channel works end to end | task |
-| [3](https://github.com/phix/sonar-remediation-automation/issues/3) | Grant the workflow token scope and confirm Actions entitlement | task |
-| [4](https://github.com/phix/sonar-remediation-automation/issues/4) | Choose the intentional code-smell catalogue | grilling |
-| [6](https://github.com/phix/sonar-remediation-automation/issues/6) | Decide the generic CI container contract | grilling |
-| [11](https://github.com/phix/sonar-remediation-automation/issues/11) | Run the API contract verification against live accounts | task |
+| [4](https://github.com/phix/sonar-remediation-automation/issues/4) | Choose the intentional code-smell catalogue | 29 findings proposed and proven to fire. Is it representative of what you see at work? |
+| [6](https://github.com/phix/sonar-remediation-automation/issues/6) | Decide the generic CI container contract | Bootstrap for execute, stock image for recon/plan — [decided and measured](decisions/ci-container.md). Agree or reject the split. |
 
-**Blocked, in dependency order:**
+**Need Nick's hands on a console:**
+
+| # | Ticket | Why only he can do it |
+|---|---|---|
+| [2](https://github.com/phix/sonar-remediation-automation/issues/2) | Prove the Microsoft Teams feedback channel | Power Automate flow creation, personal account |
+| [13](https://github.com/phix/sonar-remediation-automation/issues/13) | Create and prove `SANDBOX_REPO_TOKEN` | Fine-grained PAT creation |
+| [10](https://github.com/phix/sonar-remediation-automation/issues/10) | Bind SonarQube Cloud and land a first real scan | Import the project, issue `SONAR_TOKEN` and `SONAR_TOKEN_READ` |
+
+**Blocked:**
 
 | # | Ticket | Waits on |
 |---|---|---|
-| [7](https://github.com/phix/sonar-remediation-automation/issues/7) | Create the sonar-sandbox-app repo and cross-repo auth | #3 |
-| [8](https://github.com/phix/sonar-remediation-automation/issues/8) | Build the clean Angular + Express sandbox app | #7 |
-| [9](https://github.com/phix/sonar-remediation-automation/issues/9) | Inject the smell catalogue and tag `v0-pristine` | #4, #8 |
-| [10](https://github.com/phix/sonar-remediation-automation/issues/10) | Bind SonarQube Cloud and land a first real scan | #6, #9 |
-| [12](https://github.com/phix/sonar-remediation-automation/issues/12) | Implement `sonar-recon.yml` and finding normalization | #6, #10 |
+| [12](https://github.com/phix/sonar-remediation-automation/issues/12) | Implement `sonar-recon.yml` and finding normalization | #10 |
 
-All five open frontier tickets need Nick — four need his hands on a console, one is a live conversation.
+Everything buildable without a credential Nick has not yet issued is built. The frontier is now four items, and all four are his.
 
 ## 6. What is deliberately not yet ticketed
 

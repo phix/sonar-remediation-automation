@@ -34,7 +34,9 @@ Both runs on Nick's Mac (Docker 29.7.2), cold image pull, cloning and fully buil
 | build + test complete | **44 s** | **17 s** |
 | Java available | **21+ ✅** | **none ❌** |
 
-So the bootstrap costs about **27 seconds per run**. That is the number the caching trade-off should be argued from, and it is small enough that no caching is warranted yet: a 27-second toolchain install that is *visible in the log* is worth more here than a cache that hides it. When the sandbox grows, `actions/cache` on `~/.npm` is the first thing to reach for — not a prebuilt image, which would undo the decision above.
+So the bootstrap costs about **27 seconds per run**.
+
+The same script in CI ([run 33272186997](https://github.com/phix/sonar-remediation-automation/actions/runs/33272186997)) came in *faster* than the laptop — `toolchain=15 through_deps=25 total=34` — because a GitHub runner's network beats a home connection, not because it did less work. It resolved **the same versions**: `v24.20.0`, `openjdk 21.0.12`, `git 2.43.0`, `jq-1.7`. That identity is the property worth having; the seconds are not. That is the number the caching trade-off should be argued from, and it is small enough that no caching is warranted yet: a 27-second toolchain install that is *visible in the log* is worth more here than a cache that hides it. When the sandbox grows, `actions/cache` on `~/.npm` is the first thing to reach for — not a prebuilt image, which would undo the decision above.
 
 The second row is the one that settles the argument. A stock node image has **no JRE at all**, and `sonarqube-scan-action@v7` uses Scanner CLI v8, whose analyses on Java below 21 have been unsupported since 2026-07-20. The execute job cannot use the light shape even if it wanted to.
 
