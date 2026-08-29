@@ -23,7 +23,7 @@ The whole product, stated from the only seat that matters:
 ```
 PR opened or updated  (same-repo only — forks skipped with a non-green status)
     → scan: SonarQube Cloud analyses the PR branch
-    → itrack: OPTIONAL, default OFF — Jira ticket per group, rule suggestion
+    → jira: OPTIONAL, default OFF — Jira ticket per group, rule suggestion
               attached, Jira key written back onto the Sonar finding
     → remediate: container pulls the PR branch, fixes every eligible finding in
                  one pass. DETERMINISTIC CODEMOD FIRST, ALWAYS — an agentic call
@@ -39,7 +39,7 @@ PR opened or updated  (same-repo only — forks skipped with a non-green status)
 
 | Input | Default | What it adds |
 |---|---|---|
-| `itrack` | `false` | Jira tickets |
+| `jira` | `false` | Jira tickets |
 | `teams_notify` | `false` | the terminal Teams message |
 | `auto_merge` | `false` | merge the PR when the gate goes green |
 
@@ -159,7 +159,7 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 | [14](https://github.com/phix/sonar-remediation-automation/issues/14) | Restructure the sandbox so the smells arrive as a PR | **done bar the scan proof** — [PR #2](https://github.com/phix/sonar-sandbox-app/pull/2) is open; last box needs #10 |
 | [15](https://github.com/phix/sonar-remediation-automation/issues/15) | `sonar-pr-scan.yml` and the quality gate as a required check | #10, #14 |
 | [16](https://github.com/phix/sonar-remediation-automation/issues/16) | The remediation run: fix, test, build, push to the PR branch | #13, #15 |
-| [17](https://github.com/phix/sonar-remediation-automation/issues/17) | `itrack` — the optional Jira ticketing step | #10 |
+| [17](https://github.com/phix/sonar-remediation-automation/issues/17) | `jira` — the optional Jira ticketing step | #10 |
 | [18](https://github.com/phix/sonar-remediation-automation/issues/18) | The deterministic codemod library and its test templates | — takeable now |
 | [19](https://github.com/phix/sonar-remediation-automation/issues/19) | The agentic fix library, against a configurable LLM endpoint | — needs the endpoint |
 | [12](https://github.com/phix/sonar-remediation-automation/issues/12) | Finding normalization (the workflow half is superseded by #15) | — |

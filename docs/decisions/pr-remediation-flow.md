@@ -19,7 +19,7 @@ PR opened / updated  (same-repo branches only — forks are skipped, see §6)
    → scan        SonarQube Cloud analyses the PR branch
    → triage      any code smells?  ── no ──→ green
                         │ yes
-   → itrack      OPTIONAL, default OFF. Jira ticket per finding group:
+   → jira        OPTIONAL, default OFF. Jira ticket per finding group:
                  labelled with the Sonar project key, carrying the rule's fix
                  suggestion, Jira key written back onto the Sonar finding.
                  Remediation never waits for it.
@@ -41,7 +41,7 @@ The loop closes on itself: the push is what re-triggers the scan.
 
 | Input | Default | What it adds |
 |---|---|---|
-| `itrack` | `false` | Jira tickets |
+| `jira` | `false` | Jira tickets |
 | `teams_notify` | `false` | the terminal Teams message |
 | `auto_merge` | `false` | merge the PR when the gate goes green |
 
@@ -51,9 +51,9 @@ The loop closes on itself: the push is what re-triggers the scan.
 
 ### 1. Jira is optional, and off by default
 
-Nick: *"I want the github action for creating the jira ticket to track the issue optional. i would like it to automatically try a self remediation without needing to go through the itrack step."*
+Nick: *"I want the github action for creating the jira ticket to track the issue optional. i would like it to automatically try a self remediation without needing to go through the Jira step."*
 
-`itrack` becomes a workflow input, default `false`. When off, nothing about remediation changes — it reads findings straight from the Sonar API.
+`jira` becomes a workflow input, default `false`. When off, nothing about remediation changes — it reads findings straight from the Sonar API.
 
 This is only affordable because spec §4.1 already made the **plan JSON the system of record and Jira merely the human workflow surface**. Turning off a projection costs nothing. Had Jira been the state store, this switch would have been a rewrite.
 

@@ -19,7 +19,7 @@ A reference implementation built on a synthetic sandbox ([`phix/sonar-sandbox-ap
 ```
 PR opened or updated  (same-repo only — forks skipped with a non-green status)
     → scan       SonarQube Cloud analyses the PR branch
-    → itrack     OPTIONAL, default OFF — Jira ticket per group
+    → jira       OPTIONAL, default OFF — Jira ticket per group
     → remediate  container pulls the PR branch, fixes every eligible finding in
                  one pass. DETERMINISTIC CODEMOD FIRST, ALWAYS — an agentic call
                  happens only where no codemod exists for that rule.
@@ -32,7 +32,7 @@ PR opened or updated  (same-repo only — forks skipped with a non-green status)
     → reset      one click back to the pristine baseline
 ```
 
-`itrack`, `teams_notify` and `auto_merge` all default to `false`, so the
+`jira`, `teams_notify` and `auto_merge` all default to `false`, so the
 out-of-the-box pipeline is silent and does not merge. The experience above is
 the switches-on configuration; the defaults are safe, not complete.
 
