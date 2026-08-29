@@ -193,17 +193,23 @@ PR #2               demo/planted-smells -> main, standing demo target
 
 ## 6. What is deliberately not yet ticketed
 
-The map charts what can be stated sharply *now*. These are in scope and coming, but their shape depends on answers the frontier hasn't reached — writing them as tickets today would mean inventing detail:
+Most of what this section used to list is now ticketed — the flow restatement made shapes sharp that previously depended on answers the frontier had not reached. What remains:
 
-- **Recon workflow** and finding normalization — depends on what the Sonar Web API actually returns (#5) and the container contract (#6).
-- **Planning workflow** — grouping, fingerprints, Jira create/dedupe/supersede, plan JSON validating against the provided schema. Needs the Jira contract and real findings to group.
-- **Execute workflow** — the codemod fixers, the Claude fallback, build/test/re-scan verification, PR creation. Can't be specified before the catalogue (#4) names which rules need which treatment.
-- **Retry/escalation workflow** — failure taxonomy and retry policy. Needs real failures to classify.
-- **Reusable Teams notification action** — called at every gate. Shape depends on what the Power Automate webhook accepts (#2).
-- **`reset-sandbox.yml`** — the one-click revert.
-- **Abstraction and handoff pass** — parameterize everything site-specific, write the internal-sharing README.
+- **Retry and escalation** is no longer a separate workflow. It collapsed into [#16](https://github.com/phix/sonar-remediation-automation/issues/16)'s guards: an attempt cap, and a hard failure into the red terminal state rather than a silent stop. Spec §14's taxonomy supplies the classifications; there is no orchestration left to design.
+- **Abstraction and handoff pass** — parameterize everything site-specific and write the internal-sharing README. Deliberately last: it can only be written once the thing being abstracted actually runs, and writing it earlier would document intentions rather than behaviour.
 
-Each graduates into real tickets as the frontier advances. That is the method, not a gap.
+Everything else graduated:
+
+| Was | Now |
+|---|---|
+| Recon workflow | [#15](https://github.com/phix/sonar-remediation-automation/issues/15) (scan) + [#12](https://github.com/phix/sonar-remediation-automation/issues/12) (normalization) |
+| Planning workflow | [#17](https://github.com/phix/sonar-remediation-automation/issues/17) — and optional, default off |
+| Execute workflow | [#16](https://github.com/phix/sonar-remediation-automation/issues/16), split from [#18](https://github.com/phix/sonar-remediation-automation/issues/18) codemods and [#19](https://github.com/phix/sonar-remediation-automation/issues/19) agentic |
+| Retry/escalation workflow | folded into #16's guards |
+| Teams notification action | [#2](https://github.com/phix/sonar-remediation-automation/issues/2) — one terminal message, optional |
+| `reset-sandbox.yml` | [#20](https://github.com/phix/sonar-remediation-automation/issues/20) |
+
+That graduation is the method working, not scope growth: each became statable the moment the frontier reached it.
 
 ## 7. Validation discipline
 
@@ -213,7 +219,7 @@ Nick's requirement — *"each step of the way we need validation that the previo
 2. **Validation means pasted command output**, not assertion. "Should work" closes nothing.
 3. **Blocking dependencies are GitHub-native**, so a ticket whose predecessor hasn't closed is visibly ungrabbable in the UI.
 4. **Each stage re-proves the previous stage still works** rather than trusting it. Regressions surface at the next gate, not three tickets later.
-5. **Teams gets notified at each gate** once #2 lands, so progress is visible without opening GitHub.
+5. **One terminal message, not one per gate.** Superseded by [decision 8](decisions/pr-remediation-flow.md): the operator asked to be left alone until the PR is ready or red, so a stream of per-gate pings would defeat the requirement it was meant to serve. Progress mid-run is visible on the PR itself, for anyone who chooses to look.
 
 The recurring anti-pattern this is built against: a pipeline stage that reports success because it *ran*, rather than because it *achieved something*. Hence the sharpest gate in the map — #10 does not accept "the scan completed" as success. It diffs actual reported rule keys against the planted catalogue, and a planted smell that never fires is treated as a real defect in the oracle.
 
