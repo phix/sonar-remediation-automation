@@ -1,6 +1,6 @@
 # Sonar Remediation Sandbox — Implementation Plan
 
-**Status:** charted 2026-08-29 · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
+**Status:** charted 2026-08-29 · 1 of 11 tickets resolved · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
 **Owner:** Nick Ratliff (`phix`) · **Feedback channel:** Microsoft Teams
 
 ---
@@ -63,9 +63,29 @@ Office 365 connectors — the traditional Teams incoming webhook — were **disa
 
 The residual risk: Power Automate's Teams connectors are built around work/school (Entra ID) accounts, and Nick's is a personal hotmail account. He believes it works. [#2](https://github.com/phix/sonar-remediation-automation/issues/2) proves it or picks a fallback — and it is deliberately **ticket one**, because every subsequent validation gate reports through that channel. Discovering it's impossible after nine tickets depend on it would be expensive.
 
+### 4.3 The API contracts held three surprises
+
+Researched and largely verified against live services ([full write-up](research/api-contracts.md)):
+
+- **Jira's old search endpoint returns 410 Gone**, not a deprecation warning — sunset completed August 2025. Dedupe uses `POST /rest/api/{2,3}/search/jql`, which paginates by opaque cursor and returns no result count.
+- **Sonar returns both severity vocabularies on every issue.** Documentation implies a project is in one mode or the other; 100 real issues showed legacy `severity`, `type`, `impacts[]` and `cleanCodeAttribute` all present at 100%. For code smells they map 1:1, so the source spec's `MAJOR` vocabulary is safe to keep — and the concern that it might be unrepresentable was unfounded.
+- **Jira v3 forces ADF** (a nested document tree) for every description and comment; v2 takes plain strings. Using v2, behind a single `renderBody()` seam so a later migration touches one function.
+
+Also decided: fingerprint findings on Sonar's content `hash` rather than the line number, a deliberate deviation from spec §8.1 — line numbers shift on every unrelated edit above a finding, which would make the same defect re-fingerprint constantly.
+
+### 4.4 Scope narrowed to code smells
+
+Bugs and vulnerabilities are not targets for now. Recon filters `types=CODE_SMELL` (verified working). This is a current scope rather than a permanent exclusion, and it matches source spec §10's own advice to begin with low-risk code smells. It changes the sandbox catalogue: the deliberately-non-automatable examples become code smells *sitting in sensitive paths*, which is the more faithful test anyway — eligibility policy refuses work by location and risk, not by whether something is technically a smell.
+
 ## 5. The map
 
 Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-automation/issues/1) — one issue holding the destination and decisions, with child issues as tickets and GitHub-native dependencies expressing what blocks what.
+
+**Resolved:**
+
+| # | Ticket | Outcome |
+|---|---|---|
+| [5](https://github.com/phix/sonar-remediation-automation/issues/5) | Map the SonarQube Cloud and Jira Cloud API contracts | [`docs/research/api-contracts.md`](research/api-contracts.md) — see §4.3 below |
 
 **Takeable now (no blockers):**
 
@@ -74,8 +94,8 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 | [2](https://github.com/phix/sonar-remediation-automation/issues/2) | Prove the Microsoft Teams feedback channel works end to end | task |
 | [3](https://github.com/phix/sonar-remediation-automation/issues/3) | Grant the workflow token scope and confirm Actions entitlement | task |
 | [4](https://github.com/phix/sonar-remediation-automation/issues/4) | Choose the intentional code-smell catalogue | grilling |
-| [5](https://github.com/phix/sonar-remediation-automation/issues/5) | Map the SonarQube Cloud and Jira Cloud API contracts | research |
 | [6](https://github.com/phix/sonar-remediation-automation/issues/6) | Decide the generic CI container contract | grilling |
+| [11](https://github.com/phix/sonar-remediation-automation/issues/11) | Run the API contract verification against live accounts | task |
 
 **Blocked, in dependency order:**
 
@@ -85,8 +105,9 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 | [8](https://github.com/phix/sonar-remediation-automation/issues/8) | Build the clean Angular + Express sandbox app | #7 |
 | [9](https://github.com/phix/sonar-remediation-automation/issues/9) | Inject the smell catalogue and tag `v0-pristine` | #4, #8 |
 | [10](https://github.com/phix/sonar-remediation-automation/issues/10) | Bind SonarQube Cloud and land a first real scan | #6, #9 |
+| [12](https://github.com/phix/sonar-remediation-automation/issues/12) | Implement `sonar-recon.yml` and finding normalization | #6, #10 |
 
-#5 is AFK research and can run in parallel with everything. #2, #3, #4 and #6 need Nick.
+All five open frontier tickets need Nick — four need his hands on a console, one is a live conversation.
 
 ## 6. What is deliberately not yet ticketed
 
