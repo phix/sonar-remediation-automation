@@ -45,7 +45,7 @@ PR opened or updated  (same-repo only — forks skipped with a non-green status)
 
 **Off by default means the out-of-the-box pipeline is silent and does not merge** — it scans, fixes, pushes and stops. That is the right default, and it means the experience above is the *switches-on* configuration. The defaults are safe, not complete.
 
-**An agentic call is permitted at exactly one point in the entire system**: generating a fix for a finding whose rule has no deterministic codemod. Grouping, fingerprinting, eligibility, test generation for codemod fixes, the red-because reason, Jira bodies and the merge decision are all deterministic. On the sandbox catalogue that is **17 findings fixed with zero LLM involvement, 10 reaching Claude, 2 refused** — a ratio the pipeline reports per run, because it is the project's whole economic argument.
+**An agentic call is permitted at exactly one point in the entire system**: generating a fix for a finding whose rule has no deterministic codemod. Grouping, fingerprinting, eligibility, test generation for codemod fixes, the red-because reason, Jira bodies and the merge decision are all deterministic. On the sandbox catalogue that is **19 findings fixed with zero LLM involvement, 11 reaching Claude, 2 refused** — a ratio the pipeline reports per run, because it is the project's whole economic argument.
 
 Every arrow is gated. No stage runs on the assumption the previous one worked. The loop closes on itself — the push is what re-triggers the scan — so the guards against self-triggering are load-bearing rather than defensive.
 

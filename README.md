@@ -38,7 +38,7 @@ the switches-on configuration; the defaults are safe, not complete.
 
 **An agentic call is permitted at exactly one point in the system** — fixing a
 finding whose rule has no deterministic codemod. Everything else is code. On the
-sandbox catalogue that is 17 findings fixed with zero LLM involvement, 10
+sandbox catalogue that is 19 findings fixed with zero LLM involvement, 11
 reaching Claude, and 2 refused by policy.
 
 See [the flow decision](docs/decisions/pr-remediation-flow.md).

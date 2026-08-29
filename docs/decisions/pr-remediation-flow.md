@@ -63,7 +63,7 @@ Nick, clarifying: *"1 test for each sonar fix."* One-to-one — not zero for the
 
 Including deletions. A removed unused variable gets a characterization test of the surrounding behaviour, not a test asserting the variable is gone.
 
-The arithmetic is worth seeing before it is built. The sandbox's catalogue has 29 findings, 2 of them refused by policy, so a full run produces **27 fixes and therefore 27 new tests** on top of the existing 20. The suite roughly triples in one push. That is the intended cost — but it means test *quality* is now the pipeline's main output risk, not fix quality, and the review burden lands on whoever reads that PR.
+The arithmetic is worth seeing before it is built. The sandbox's catalogue has 32 findings, 2 of them refused by policy, so a full run produces **30 fixes and therefore 30 new tests** on top of the existing 20. The suite more than doubles in one push. That is the intended cost — but it means test *quality* is now the pipeline's main output risk, not fix quality, and the review burden lands on whoever reads that PR.
 
 **This collides with decision 7 (deterministic first), and decision 7 wins.** A codemod that deletes an unused import cannot *invent* a meaningful test for the module it edited — so the obvious move is to let Claude write the test even when the fix was mechanical. That is now forbidden: writing a test is not "analyzing how to fix a finding no codemod could handle."
 
@@ -126,7 +126,7 @@ Concretely, none of these may be an agentic call:
 | Jira body, labels, dedupe | String assembly from known fields. |
 | Auto-merge decision | The quality gate already decided; this just acts on it. |
 
-On the sandbox catalogue this means **17 of 29 findings are fixed with zero LLM involvement**, and 10 reach Claude — the `S3776`, `S4144` and `S3358` groups, where a mechanical rewrite genuinely does not exist. The 2 refused findings never reach either engine.
+On the sandbox catalogue this means **19 of 32 findings are fixed with zero LLM involvement**, and 11 reach Claude — the `S3776`, `S4144`, `S3358` and `S7737` groups, where a mechanical rewrite genuinely does not exist. The 2 refused findings never reach either engine.
 
 The measurable consequence: **the codemod library is now the core deliverable of this project**, not a cost saving on the side. A rule with no codemod is a rule that costs money and latency on every PR that trips it. That reframing is why it gets [its own ticket](https://github.com/phix/sonar-remediation-automation/issues/18).
 
