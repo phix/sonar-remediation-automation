@@ -60,9 +60,22 @@ eval "$(./scripts/secrets.sh export)"
 
 GitHub Actions encrypted secrets on `phix/sonar-remediation-automation`:
 
+Bulk-sync everything already exported in your shell:
+
+```bash
+./scripts/sync-secrets.sh                # add --keychain to mirror locally too
+./scripts/sync-secrets.sh --dry-run      # see what would happen first
+```
+
+Values are piped to `gh` on **stdin** — never in argv (which `ps` can read), never in shell history, never echoed. Only names and character counts print. Anything unset is skipped rather than blanked, so a partial run is safe and re-runnable.
+
+Or one at a time — `gh` prompts and reads the value itself:
+
 ```bash
 gh secret set JIRA_API_TOKEN --repo phix/sonar-remediation-automation
 ```
+
+Verified 2026-08-29 that the current `gh` token can set and delete both secrets and variables on this repo.
 
 `gh secret set` reads from stdin or prompts, so the value never enters your shell history. Set them once; they are write-only afterwards — GitHub will not show them back, which is why the Keychain copy matters for local runs.
 
