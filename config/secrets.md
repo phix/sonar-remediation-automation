@@ -20,6 +20,7 @@ Where every credential lives, and why it lives there. **No secret values appear 
 | Jira cloud id | `8cda2610-e1e4-4253-ab1f-066e94b3ae51` |
 | Jira project statuses | To Do · In Progress · In Review · Done |
 | `SONAR_ORG` | `phix` (SonarQube Cloud, Nick is Admin, single org) |
+| Atlassian login | `1337.geek@gmail.com` — **not** the hotmail address; confirmed 2026-08-29 |
 | `SONAR_PROJECT_KEY` | expected `phix_sonar-sandbox-app` — **not yet real**, created when the sandbox repo is imported (issue #10) |
 | Automation repo | `phix/sonar-remediation-automation` |
 | Sandbox repo | `phix/sonar-sandbox-app` (not yet created — issue #7) |
@@ -30,7 +31,7 @@ Where every credential lives, and why it lives there. **No secret values appear 
 
 | Name | Source | Used by |
 |---|---|---|
-| `JIRA_USER_EMAIL` | the Atlassian login for the 1337software site | Jira Basic auth (it is half the credential — treat it as secret) |
+| `JIRA_USER_EMAIL` | `1337.geek@gmail.com` | Jira Basic auth. Half the credential, so it lives in secrets — though it is already public in this repo's commit authorship, so the token is what actually protects the account |
 | `JIRA_API_TOKEN` | [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens) — **classic, unscoped** | plan + retry workflows |
 | `SONAR_TOKEN` | SonarQube Cloud → My Account → Security | the scan action |
 | `SONAR_TOKEN_READ` | as above, separate token | recon (least privilege, spec §18.2) |

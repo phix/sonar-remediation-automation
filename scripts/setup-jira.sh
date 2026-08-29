@@ -25,7 +25,8 @@ TOKEN=$(security find-generic-password -s "$SERVICE" -a jira-api-token  -w 2>/de
 if [ -n "$EMAIL" ]; then
   read -r -p "Atlassian email [$EMAIL]: " in; [ -n "$in" ] && EMAIL="$in"
 else
-  read -r -p "Atlassian email (the address this Jira account signs in with): " EMAIL
+  read -r -p "Atlassian email [1337.geek@gmail.com]: " EMAIL
+  [ -z "$EMAIL" ] && EMAIL=1337.geek@gmail.com
 fi
 [ -z "$EMAIL" ] && { echo "email is required"; exit 1; }
 
