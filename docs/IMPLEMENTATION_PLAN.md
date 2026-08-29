@@ -132,13 +132,27 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 | [13](https://github.com/phix/sonar-remediation-automation/issues/13) | Create and prove `SANDBOX_REPO_TOKEN` | Fine-grained PAT creation |
 | [10](https://github.com/phix/sonar-remediation-automation/issues/10) | Bind SonarQube Cloud and land a first real scan | Import the project, issue `SONAR_TOKEN` and `SONAR_TOKEN_READ` |
 
-**Blocked:**
+**Blocked, in dependency order:**
 
 | # | Ticket | Waits on |
 |---|---|---|
-| [12](https://github.com/phix/sonar-remediation-automation/issues/12) | Implement `sonar-recon.yml` and finding normalization | #10 |
+| [14](https://github.com/phix/sonar-remediation-automation/issues/14) | Restructure the sandbox so the smells arrive as a PR | — takeable now |
+| [15](https://github.com/phix/sonar-remediation-automation/issues/15) | `sonar-pr-scan.yml` and the quality gate as a required check | #10, #14 |
+| [16](https://github.com/phix/sonar-remediation-automation/issues/16) | The remediation run: fix, test, build, push to the PR branch | #13, #15 |
+| [17](https://github.com/phix/sonar-remediation-automation/issues/17) | `itrack` — the optional Jira ticketing step | #10 |
+| [12](https://github.com/phix/sonar-remediation-automation/issues/12) | Finding normalization (the workflow half is superseded by #15) | — |
 
-Everything buildable without a credential Nick has not yet issued is built. The frontier is now four items, and all four are his.
+Everything buildable without a credential Nick has not yet issued is built.
+
+## 5a. What the flow restatement changed
+
+Nick restated the flow on 2026-08-29, after the sandbox and catalogue were built. The full decision is in [`docs/decisions/pr-remediation-flow.md`](decisions/pr-remediation-flow.md); the map consequences are:
+
+- **#14 is new and inverts #9.** Sonar analyses a PR against *new code*, so 29 findings sitting on `main` report nothing. `main` has to be clean and the smells have to arrive as a PR. Non-destructive to fix, and none of the catalogue work is lost — it moves to a branch.
+- **#15, #16, #17 are new** and replace the not-yet-ticketed recon/plan/execute/verify chain from §6.
+- **#12 is narrowed.** `sonar-recon.yml` is superseded by #15; the normalization half survives, and no longer needs #10, since a real findings payload is already on disk.
+- **Teams has fallen out of the stated flow.** #2 is not cancelled — the PR comment may simply have replaced it, which would be the better answer. Needs an explicit yes or no.
+- **PR creation disappears entirely.** The automation no longer opens a PR; it pushes to one that already exists. This narrows what `SANDBOX_REPO_TOKEN` (#13) is for without changing the permissions it needs.
 
 ## 6. What is deliberately not yet ticketed
 
