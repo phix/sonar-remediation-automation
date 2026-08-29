@@ -1,0 +1,86 @@
+{
+  "plan_id": "plan-repo1-20260827T100100Z",
+  "repository": "example-org/example-repo",
+  "sonar_project_key": "example-org_example-repo",
+  "sonar_snapshot_id": "20260827T095500Z",
+  "findings_artifact": "sonar_findings_example-repo_20260827095500.json",
+  "grouping_strategy": {
+    "name": "rule-severity-module",
+    "version": "v1",
+    "dimensions": [
+      "repository",
+      "rule_key",
+      "severity",
+      "module_prefix"
+    ]
+  },
+  "policy": {
+    "allowed_rule_keys": [
+      "java:S106",
+      "java:S1481"
+    ],
+    "allowed_languages": [
+      "java"
+    ],
+    "excluded_paths": [
+      "src/security/",
+      "src/auth/"
+    ],
+    "max_files_touched": 5,
+    "max_lines_changed": 100,
+    "max_retries": 1,
+    "create_pr_on_success": true,
+    "delete_failed_branch_if_no_diagnostic_value": true
+  },
+  "status": "Planned",
+  "jira_summary": {
+    "project_key": "APP",
+    "created_issue_count": 1,
+    "linked_issue_count": 0,
+    "superseded_issue_count": 0
+  },
+  "items": [
+    {
+      "group_id": "grp-001",
+      "group_fingerprint": "gf_9f6f4f0f0f",
+      "rule_key": "java:S106",
+      "severity": "MAJOR",
+      "module_prefix": "src/main/service/",
+      "finding_ids": [
+        "f-1001",
+        "f-1002"
+      ],
+      "finding_count": 2,
+      "representative_finding_id": "f-1001",
+      "eligibility": {
+        "is_eligible": true,
+        "reason": "Allowlisted rule and safe module scope"
+      },
+      "proposed_fix_strategy": "Replace direct console output with approved logger usage pattern.",
+      "jira_issue_key": "APP-1234",
+      "status": "Eligible",
+      "attempt_count": 0,
+      "history": [
+        {
+          "timestamp": "2026-08-27T10:01:00Z",
+          "event": "plan_created",
+          "status": "Eligible",
+          "details": "Group created and linked to Jira."
+        }
+      ]
+    }
+  ],
+  "execution_history": [
+    {
+      "timestamp": "2026-08-27T10:01:00Z",
+      "workflow": "plan-remediation.yml",
+      "plan_item_id": "grp-001",
+      "result": "planned",
+      "artifact_refs": [
+        "remediation_plan_example-repo_20260827100100.json"
+      ]
+    }
+  ],
+  "created_at": "2026-08-27T10:01:00Z",
+  "updated_at": "2026-08-27T10:01:00Z"
+}

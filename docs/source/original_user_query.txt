@@ -1,0 +1,5 @@
+
+<system_current_date>
+Thursday, August 27, 2026 - 10:01 AM PDT
+</system_current_date>
+Yes give me a full architecture spec, a json schema, a jira workflow/state model and a draft github actions workflow design. I want it all into files i can save locally

@@ -1,0 +1,371 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/sonar-remediation-plan.schema.json",
+  "title": "Sonar Remediation Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "plan_id",
+    "repository",
+    "sonar_project_key",
+    "sonar_snapshot_id",
+    "findings_artifact",
+    "grouping_strategy",
+    "policy",
+    "status",
+    "items",
+    "execution_history",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "plan_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "repository": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sonar_project_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sonar_snapshot_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "findings_artifact": {
+      "type": "string",
+      "minLength": 1
+    },
+    "grouping_strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version",
+        "dimensions"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        }
+      }
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "allowed_rule_keys",
+        "allowed_languages",
+        "excluded_paths",
+        "max_files_touched",
+        "max_lines_changed",
+        "max_retries",
+        "create_pr_on_success"
+      ],
+      "properties": {
+        "allowed_rule_keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed_languages": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "excluded_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_files_touched": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_lines_changed": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_retries": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "create_pr_on_success": {
+          "type": "boolean"
+        },
+        "delete_failed_branch_if_no_diagnostic_value": {
+          "type": "boolean"
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "Draft",
+        "Planned",
+        "In Progress",
+        "Partially Verified",
+        "Completed",
+        "Blocked",
+        "Closed"
+      ]
+    },
+    "jira_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "project_key": {
+          "type": "string"
+        },
+        "created_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "linked_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "superseded_issue_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "group_id",
+          "group_fingerprint",
+          "rule_key",
+          "severity",
+          "module_prefix",
+          "finding_ids",
+          "finding_count",
+          "eligibility",
+          "status",
+          "attempt_count"
+        ],
+        "properties": {
+          "group_id": {
+            "type": "string"
+          },
+          "group_fingerprint": {
+            "type": "string"
+          },
+          "rule_key": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "module_prefix": {
+            "type": "string"
+          },
+          "finding_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "finding_count": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "representative_finding_id": {
+            "type": "string"
+          },
+          "eligibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "is_eligible",
+              "reason"
+            ],
+            "properties": {
+              "is_eligible": {
+                "type": "boolean"
+              },
+              "reason": {
+                "type": "string"
+              }
+            }
+          },
+          "proposed_fix_strategy": {
+            "type": "string"
+          },
+          "jira_issue_key": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Discovered",
+              "Grouped",
+              "Ticketed",
+              "Eligible",
+              "In Progress",
+              "Patch Generated",
+              "Build Passed",
+              "Tests Passed",
+              "Scan Passed",
+              "Fixed Pending Verification",
+              "Verified",
+              "Retry Pending",
+              "Blocked",
+              "Escalated",
+              "Closed"
+            ]
+          },
+          "attempt_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "branch_name": {
+            "type": "string"
+          },
+          "pull_request_url": {
+            "type": "string"
+          },
+          "verification": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "build_passed": {
+                "type": "boolean"
+              },
+              "tests_passed": {
+                "type": "boolean"
+              },
+              "scan_passed": {
+                "type": "boolean"
+              },
+              "issue_reproduced_after_fix": {
+                "type": "boolean"
+              },
+              "verified_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "failure": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "classification": {
+                "type": "string",
+                "enum": [
+                  "build_failure_patch_induced",
+                  "test_regression_patch_induced",
+                  "scan_unresolved",
+                  "infra_failure_transient",
+                  "infra_failure_persistent",
+                  "non_automatable",
+                  "ambiguous_root_cause"
+                ]
+              },
+              "summary": {
+                "type": "string"
+              },
+              "retry_recommended": {
+                "type": "boolean"
+              },
+              "human_action_recommended": {
+                "type": "string"
+              }
+            }
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "timestamp",
+                "event",
+                "status"
+              ],
+              "properties": {
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "event": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "details": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "execution_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "timestamp",
+          "workflow",
+          "result"
+        ],
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workflow": {
+            "type": "string"
+          },
+          "plan_item_id": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "artifact_refs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
