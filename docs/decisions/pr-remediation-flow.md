@@ -151,6 +151,40 @@ Default `false` — a pipeline that silently merges code on first adoption is ex
 
 Note the interaction with decision 3: findings the policy refuses keep the gate red, so **auto-merge and the refusal path cannot conflict**. There is no state where the bot merges something it refused to fix.
 
+### 10. The agentic path calls a configurable endpoint, not a vendor
+
+Nick: *"if you come across a sonar fix you cannot determine the fix through a coding tool you may need to include a library with have the github action use my openllm to make agentic decisions."*
+
+The one permitted agentic call goes to **Nick's own OpenLLM deployment**, reached through a single seam so the provider is configuration rather than code.
+
+| Variable | Purpose |
+|---|---|
+| `LLM_BASE_URL` | endpoint root, e.g. `https://…/v1` |
+| `LLM_API_KEY` | bearer credential |
+| `LLM_MODEL` | model identifier |
+
+**Assumed OpenAI-compatible** — `POST {base}/chat/completions` with a bearer token. OpenLLM serves an OpenAI-compatible API, and so does essentially every self-hosted server worth using, so this is the safe default. If Nick's deployment is not, only the client function changes, which is the entire point of putting it behind a seam. Stated as an assumption rather than a fact because it has not been reached yet.
+
+This also replaces the `ANTHROPIC_API_KEY` entry that `config/secrets.md` carried from the original spec. Nothing in this system is bound to a particular model vendor, which matters more for the handoff than it does here — the office will have its own approved endpoint and its own opinions about which models may see source code.
+
+#### The model is never trusted, only used
+
+Every output is validated deterministically before it can reach the branch:
+
+1. the patch **applies**, or it is rejected;
+2. the build **passes**, or it is rejected;
+3. the full suite **passes**, or it is rejected;
+4. the re-scan shows the finding **gone**, or it is rejected;
+5. exactly **one** new test accompanies the fix, or it is rejected.
+
+A model claiming it fixed something is evidence of nothing. This is the same principle the rest of the pipeline runs on — no stage is believed because it ran — applied at the point where it matters most, because it is the only stage whose output is not deterministic.
+
+#### It must fail into red, never hang
+
+A self-hosted endpoint can be down, slow, or rate-limited, and the operator is sitting in a hands-off wait for a single message. So the client is bounded — connect timeout, request timeout, a retry cap — and **exhausting them is a terminal red state with a reason**, not a stall. `infra_failure_transient` and `infra_failure_persistent` already exist in spec §14's taxonomy for exactly this.
+
+A pipeline that hangs is worse than one that fails, because the person waiting cannot tell the difference between "still working" and "never coming back".
+
 ## What this changes against the charted design
 
 | | Charted | Now |

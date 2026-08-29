@@ -92,7 +92,17 @@ Three of these cannot exist until earlier tickets land. They are gated, not forg
 | `SONAR_PROJECT_KEY` | issue #10 — no SonarCloud project until the sandbox repo is imported |
 | `SANDBOX_REPO_TOKEN` | issue #7 — the sandbox repo does not exist yet |
 
-`ANTHROPIC_API_KEY` is only needed once the Claude fallback in the fix engine is built; it is listed early so the sync is a single pass later.
+The **agentic fix endpoint** is only needed once the fix engine reaches a finding no codemod can handle. It is Nick's own OpenLLM deployment, reached through a single swappable seam — nothing here is bound to a model vendor, which matters for the handoff because the office will have its own approved endpoint.
+
+| Name | Secret? | Purpose |
+|---|---|---|
+| `LLM_BASE_URL` | no — config | endpoint root, e.g. `https://…/v1` |
+| `LLM_API_KEY` | **yes** | bearer credential |
+| `LLM_MODEL` | no — config | model identifier |
+
+Assumed OpenAI-compatible (`POST {base}/chat/completions`, bearer auth). If the deployment is not, only the client function changes.
+
+This supersedes the `ANTHROPIC_API_KEY` the original spec assumed.
 
 ## Rotation and hygiene
 

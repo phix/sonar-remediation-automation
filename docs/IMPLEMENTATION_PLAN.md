@@ -160,6 +160,8 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 | [15](https://github.com/phix/sonar-remediation-automation/issues/15) | `sonar-pr-scan.yml` and the quality gate as a required check | #10, #14 |
 | [16](https://github.com/phix/sonar-remediation-automation/issues/16) | The remediation run: fix, test, build, push to the PR branch | #13, #15 |
 | [17](https://github.com/phix/sonar-remediation-automation/issues/17) | `itrack` — the optional Jira ticketing step | #10 |
+| [18](https://github.com/phix/sonar-remediation-automation/issues/18) | The deterministic codemod library and its test templates | — takeable now |
+| [19](https://github.com/phix/sonar-remediation-automation/issues/19) | The agentic fix library, against a configurable LLM endpoint | — needs the endpoint |
 | [12](https://github.com/phix/sonar-remediation-automation/issues/12) | Finding normalization (the workflow half is superseded by #15) | — |
 
 Everything buildable without a credential Nick has not yet issued is built.
@@ -185,6 +187,8 @@ PR #2               demo/planted-smells -> main, standing demo target
 - **#12 is narrowed.** `sonar-recon.yml` is superseded by #15; the normalization half survives, and no longer needs #10, since a real findings payload is already on disk.
 - **Teams has fallen out of the stated flow.** #2 is not cancelled — the PR comment may simply have replaced it, which would be the better answer. Needs an explicit yes or no.
 - **PR creation disappears entirely.** The automation no longer opens a PR; it pushes to one that already exists. This narrows what `SANDBOX_REPO_TOKEN` (#13) is for without changing the permissions it needs.
+- **The codemod library became the core deliverable** (#18). "Codemod first" was a cost optimisation; it is now an architectural constraint, so a rule without a fixer is a rule that costs money and latency on every PR that trips it.
+- **The agentic path points at Nick's own OpenLLM** (#19), through a configurable OpenAI-compatible seam rather than a hardcoded vendor. This supersedes the `ANTHROPIC_API_KEY` the original spec assumed, and gives the office a swap point rather than a rewrite.
 - **Fork pull requests are out of scope**, decided rather than tolerated. GitHub withholds repository secrets from a `pull_request` run on a fork, so the scan cannot run at all — the failure is at step 1, not the push. The usual workaround, `pull_request_target`, is refused: it runs in the base repo's context with secrets and a write token against contributor-controlled code. Workflows must skip forks **explicitly, with a non-green status**, because a workflow that silently does nothing is indistinguishable from one that ran and found nothing.
 
 ## 6. What is deliberately not yet ticketed
