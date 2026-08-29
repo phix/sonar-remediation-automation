@@ -150,6 +150,21 @@ else
     bad "Jira auth failed — remaining Jira checks unreliable"
   fi
 
+  # Project visibility. `GET /project` answers 200 [] when unauthenticated, so an
+  # empty list is ambiguous, not benign -- call it out rather than sailing past it.
+  projs=$(curl "${JA[@]}" "$JB/project")
+  pn=$(echo "$projs" | jq -r 'if type=="array" then length else -1 end')
+  if [ "$pn" -gt 0 ]; then
+    ok "$pn project(s) visible: $(echo "$projs" | jq -r '[.[].key] | join(", ")')"
+    if ! echo "$projs" | jq -e --arg k "$JIRA_PROJECT_KEY" 'any(.[]; .key==$k)' >/dev/null; then
+      bad "JIRA_PROJECT_KEY='$JIRA_PROJECT_KEY' is NOT among the visible projects -- wrong key or wrong site?"
+    fi
+  elif [ "$pn" -eq 0 ]; then
+    bad "project list is EMPTY. This is what an unauthenticated or wrong-site call looks like (200 + []), not proof the site has no projects. Check JIRA_BASE_URL and that the token's account can see this site."
+  else
+    bad "unexpected /project response: $(echo "$projs" | jq -c '.' | head -c 160)"
+  fi
+
   # The removed endpoint really removed?
   old=$(curl -s -o /dev/null -w '%{http_code}' -u "${JIRA_USER_EMAIL}:${JIRA_API_TOKEN}" \
         -G "$JB/search" --data-urlencode "jql=project=${JIRA_PROJECT_KEY}")
