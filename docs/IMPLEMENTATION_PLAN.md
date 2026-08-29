@@ -136,7 +136,7 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 
 | # | Ticket | Waits on |
 |---|---|---|
-| [14](https://github.com/phix/sonar-remediation-automation/issues/14) | Restructure the sandbox so the smells arrive as a PR | — takeable now |
+| [14](https://github.com/phix/sonar-remediation-automation/issues/14) | Restructure the sandbox so the smells arrive as a PR | **done bar the scan proof** — [PR #2](https://github.com/phix/sonar-sandbox-app/pull/2) is open; last box needs #10 |
 | [15](https://github.com/phix/sonar-remediation-automation/issues/15) | `sonar-pr-scan.yml` and the quality gate as a required check | #10, #14 |
 | [16](https://github.com/phix/sonar-remediation-automation/issues/16) | The remediation run: fix, test, build, push to the PR branch | #13, #15 |
 | [17](https://github.com/phix/sonar-remediation-automation/issues/17) | `itrack` — the optional Jira ticketing step | #10 |
@@ -147,6 +147,18 @@ Everything buildable without a credential Nick has not yet issued is built.
 ## 5a. What the flow restatement changed
 
 Nick restated the flow on 2026-08-29, after the sandbox and catalogue were built. The full decision is in [`docs/decisions/pr-remediation-flow.md`](decisions/pr-remediation-flow.md); the map consequences are:
+
+### The sandbox now looks like this
+
+```
+main                03c5384   clean · tagged v0-clean · catalogue empty by design
+demo/planted-smells b2746c5   29 findings · tagged v0-pristine
+PR #2               demo/planted-smells -> main, standing demo target
+```
+
+`smells:verify` runs on both and means something different on each: on `main` it asserts nothing has crept in, on the branch it asserts the planted set is intact. The difference between the two catalogues is the demo's expectation.
+
+**Reset restores two things**, and the branch is the harder one: force-push it rather than closing and reopening the PR, because PR #2's number is what Jira links, Sonar PR analysis and the required status check are all keyed to.
 
 - **#14 is new and inverts #9.** Sonar analyses a PR against *new code*, so 29 findings sitting on `main` report nothing. `main` has to be clean and the smells have to arrive as a PR. Non-destructive to fix, and none of the catalogue work is lost — it moves to a branch.
 - **#15, #16, #17 are new** and replace the not-yet-ticketed recon/plan/execute/verify chain from §6.
