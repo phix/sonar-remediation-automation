@@ -12,21 +12,35 @@ A reference implementation built on a synthetic sandbox ([`phix/sonar-sandbox-ap
 
 ## The loop
 
+> Pull down code. Create a branch. Push it. Open a PR.
+> **Do nothing else.** Wait for one message saying the PR is ready, or that it
+> is red and exactly why.
+
 ```
-PR opened or updated
+PR opened or updated  (same-repo only — forks skipped with a non-green status)
     → scan       SonarQube Cloud analyses the PR branch
-    → itrack     OPTIONAL — Jira ticket per group, rule suggestion attached,
-                 Jira key written back onto the Sonar finding
-    → remediate  container pulls the PR branch, fixes every eligible finding
-                 in one pass, exactly one unit test per fix, builds, tests
-    → push       commit lands on the PR branch → re-scan fires automatically
-    → gate       all green → merge allowed
-                 anything refused → escalate, merge stays blocked
+    → itrack     OPTIONAL, default OFF — Jira ticket per group
+    → remediate  container pulls the PR branch, fixes every eligible finding in
+                 one pass. DETERMINISTIC CODEMOD FIRST, ALWAYS — an agentic call
+                 happens only where no codemod exists for that rule.
+                 Exactly one unit test per fix. Build. Test.
+    → push       commit lands on the PR branch → re-scan fires (capped)
+    → settle     green → OPTIONAL auto-merge, default OFF
+                 red   → merge stays blocked
+    → notify     OPTIONAL, default OFF — ONE Teams message at the terminal
+                 state: "ready", or "red because <deterministic reason>"
     → reset      one click back to the pristine baseline
 ```
 
-The loop closes on itself: the push is what re-triggers the scan. Jira is a
-projection, not a dependency — `itrack` defaults to off and remediation never
-waits for it. See [the flow decision](docs/decisions/pr-remediation-flow.md).
+`itrack`, `teams_notify` and `auto_merge` all default to `false`, so the
+out-of-the-box pipeline is silent and does not merge. The experience above is
+the switches-on configuration; the defaults are safe, not complete.
+
+**An agentic call is permitted at exactly one point in the system** — fixing a
+finding whose rule has no deterministic codemod. Everything else is code. On the
+sandbox catalogue that is 17 findings fixed with zero LLM involvement, 10
+reaching Claude, and 2 refused by policy.
+
+See [the flow decision](docs/decisions/pr-remediation-flow.md).
 
 Status: **sandbox built and scanned-ready; the PR flow is being charted.**

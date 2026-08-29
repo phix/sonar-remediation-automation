@@ -2,26 +2,50 @@
 
 **Context:** Nick restated the flow 2026-08-29, after the sandbox and catalogue were built. This supersedes the campaign-style loop in the [architecture spec](../source/sonar_remediation_architecture_spec.md) §6 where the two disagree. **Superseding is deliberate and narrow** — the spec's data model, fingerprinting, eligibility policy, failure taxonomy and verification evidence rules all still hold. What changes is the *trigger*, the *unit of work*, and *where the fix lands*.
 
+## The operator's experience
+
+This is the whole product, stated from the only seat that matters:
+
+> Pull down code. Create a branch. Push it. Open a PR.
+> **Do nothing else.** Wait for one message saying the PR is ready, or that it
+> is red and exactly why.
+
+Everything below exists to make those four sentences true. Any design choice that adds a step for the person who opened the PR is wrong, regardless of how much it helps the pipeline.
+
 ## The flow
 
 ```
-PR opened / updated
+PR opened / updated  (same-repo branches only — forks are skipped, see §6)
    → scan        SonarQube Cloud analyses the PR branch
-   → triage      any code smells?  ── no ──→ quality gate green, merge allowed
+   → triage      any code smells?  ── no ──→ green
                         │ yes
-   → itrack      OPTIONAL. Create a Jira ticket per finding group:
-                   · labelled with the Sonar project key
-                   · carrying the rule's fix suggestion
-                   · Jira key written back onto the Sonar finding
-                 Default is OFF — remediation does not wait for it.
-   → remediate   container pulls the PR branch, fixes every eligible finding
-                 in one pass, writes exactly one unit test per fix, builds, tests
+   → itrack      OPTIONAL, default OFF. Jira ticket per finding group:
+                 labelled with the Sonar project key, carrying the rule's fix
+                 suggestion, Jira key written back onto the Sonar finding.
+                 Remediation never waits for it.
+   → remediate   container pulls the PR branch and fixes every eligible finding
+                 in one pass — DETERMINISTIC CODEMOD FIRST, always. An agentic
+                 call happens only where no codemod exists for that rule.
+                 Exactly one unit test per fix. Build. Test.
    → push        commit back onto the PR branch → PR updates → re-scan
-   → gate        all scans green → merge allowed
-                 anything refused → escalate, merge stays blocked
+                 (loop, capped — see "Guards")
+   → settle      green  → OPTIONAL auto-merge, default OFF
+                 red    → merge stays blocked
+   → notify      OPTIONAL, default OFF. ONE Teams message at the terminal state:
+                 "ready", or "red because <deterministic reason>".
 ```
 
-The loop closes on itself: the push in step 6 is what triggers step 1 again.
+The loop closes on itself: the push is what re-triggers the scan.
+
+### The three switches, all default `false`
+
+| Input | Default | What it adds |
+|---|---|---|
+| `itrack` | `false` | Jira tickets |
+| `teams_notify` | `false` | the terminal Teams message |
+| `auto_merge` | `false` | merge the PR when the gate goes green |
+
+**Off by default means the out-of-the-box pipeline is silent and does not merge.** It scans, fixes, pushes and stops. That is the right default — nothing surprising happens to a repository that has just adopted this — but it is worth saying plainly that *the experience described above is the switches-on configuration*. Hands-off-until-a-Teams-message requires `teams_notify: true`, and "ready to merge" becoming "merged" requires `auto_merge: true`. The defaults are safe, not complete.
 
 ## Decisions
 
@@ -41,7 +65,11 @@ Including deletions. A removed unused variable gets a characterization test of t
 
 The arithmetic is worth seeing before it is built. The sandbox's catalogue has 29 findings, 2 of them refused by policy, so a full run produces **27 fixes and therefore 27 new tests** on top of the existing 20. The suite roughly triples in one push. That is the intended cost — but it means test *quality* is now the pipeline's main output risk, not fix quality, and the review burden lands on whoever reads that PR.
 
-**This has a consequence worth stating plainly: it makes the codemod path no longer purely mechanical.** A deterministic fixer that deletes an unused import cannot also invent a meaningful test for the module it edited. So either the codemod emits a templated characterization test, or test authorship routes through Claude even when the fix itself was mechanical. The design takes the first path and falls back to the second — but the "cheap deterministic path" is now cheap-*er*, not free, and the fix engine's two branches are no longer cleanly separated.
+**This collides with decision 7 (deterministic first), and decision 7 wins.** A codemod that deletes an unused import cannot *invent* a meaningful test for the module it edited — so the obvious move is to let Claude write the test even when the fix was mechanical. That is now forbidden: writing a test is not "analyzing how to fix a finding no codemod could handle."
+
+So **every codemod ships a test template alongside its transform.** `remove-unused-variable` emits a characterization test that imports the module and asserts its public behaviour is unchanged; it does not assert the variable is gone. The fixer and its template are written together and versioned together, and a codemod without a template is not finished.
+
+Be honest about what that buys. A templated characterization test for "removed an unused variable in `store.js`" asserts the module still works. That is not nothing — it would catch a codemod that deleted the wrong line — but it is a regression guard, not a specification. **The valuable tests come from the agentic path**, where Claude is restructuring behaviour and can say what the behaviour is. The 17 templated tests are cheap insurance; the 10 written ones are the ones worth reading.
 
 Accepted deliberately: a fix with no test is a fix nobody can prove didn't break something, and the whole point of the gate chain is that nothing is trusted because it ran.
 
@@ -80,6 +108,48 @@ head.repo.full_name != base.repo.full_name  →  skip, comment, neutral status
 ```
 
 The status must be **neutral or failing, never green**. A fork PR that reports a passing Sonar gate because the scan never ran is worse than no gate.
+
+### 7. Deterministic first — an agentic call is a last resort, not a default
+
+Nick: *"there should be no agentic calls except for when absolutely necessary to analyze how to fix the sonar findings because you couldn't find a deterministic resolution."*
+
+This promotes what was a cost optimisation into an architectural constraint. Previously "codemod first, Claude as fallback" meant *prefer* the cheap path. Now it means: **an LLM call is permitted at exactly one point in the entire system** — generating a fix for a finding whose rule has no codemod. Everywhere else, deterministic code.
+
+Concretely, none of these may be an agentic call:
+
+| Step | Must be deterministic because |
+|---|---|
+| Grouping and fingerprinting | It is a pure function of the finding set. Spec §8 defines it exactly. |
+| Eligibility / refusal | A policy decision that must be auditable and identical every run. |
+| Test generation for codemod fixes | See decision 2 — templates, not prose. |
+| The "red because XYZ" reason | Spec §14's failure taxonomy is a closed set of classifications. |
+| Jira body, labels, dedupe | String assembly from known fields. |
+| Auto-merge decision | The quality gate already decided; this just acts on it. |
+
+On the sandbox catalogue this means **17 of 29 findings are fixed with zero LLM involvement**, and 10 reach Claude — the `S3776`, `S4144` and `S3358` groups, where a mechanical rewrite genuinely does not exist. The 2 refused findings never reach either engine.
+
+The measurable consequence: **the codemod library is now the core deliverable of this project**, not a cost saving on the side. A rule with no codemod is a rule that costs money and latency on every PR that trips it. That reframing is why it gets [its own ticket](https://github.com/phix/sonar-remediation-automation/issues/18).
+
+### 8. One Teams message, at the terminal state only
+
+Nick: *"everything should be hands off until i get a teams message that the pr is ready, that the pr is red because xyz."*
+
+**This supersedes §7.5 of the implementation plan**, which had Teams notified at *every* gate. A remediation loop that may run several scan cycles would produce a stream of messages, and "hands off" means not being pinged through the middle of it. One message, when the PR reaches a terminal state:
+
+- **ready** — gate green, nothing refused
+- **red because `<reason>`** — with the reason drawn from spec §14's failure taxonomy plus the specific findings, e.g. *"2 findings in `api/src/auth/` refused by eligibility policy (excluded path)"*
+
+The reason is assembled deterministically from the plan state. It is a report, not a summary — nothing writes prose about what went wrong.
+
+`teams_notify`, default `false`.
+
+### 9. Auto-merge when green, default off
+
+`auto_merge: true` enables GitHub's native auto-merge on the PR, so it merges the moment the required checks pass. Native rather than a bot-issued merge, because it keeps branch protection as the decision-maker: if the gate is red, nothing merges, and no code path exists that could merge it anyway.
+
+Default `false` — a pipeline that silently merges code on first adoption is exactly the surprise that gets a tool banned. Turning it on is a deliberate act by someone who has watched it run.
+
+Note the interaction with decision 3: findings the policy refuses keep the gate red, so **auto-merge and the refusal path cannot conflict**. There is no state where the bot merges something it refused to fix.
 
 ## What this changes against the charted design
 

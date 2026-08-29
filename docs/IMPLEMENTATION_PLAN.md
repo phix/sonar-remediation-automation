@@ -15,17 +15,37 @@ The design intent comes from four source documents, preserved verbatim in [`docs
 
 **Restated by Nick on 2026-08-29, after the sandbox was built.** The unit of work is a pull request, not a backlog campaign. A PR that introduces code smells gets them fixed on its own branch, and cannot merge until the scan is green.
 
+The whole product, stated from the only seat that matters:
+
+> Pull down code. Create a branch. Push it. Open a PR.
+> **Do nothing else.** Wait for one message saying the PR is ready, or that it is red and exactly why.
+
 ```
-PR opened or updated
+PR opened or updated  (same-repo only — forks skipped with a non-green status)
     → scan: SonarQube Cloud analyses the PR branch
-    → itrack: OPTIONAL — Jira ticket per group, rule suggestion attached,
-              Jira key written back onto the Sonar finding
-    → remediate: container pulls the PR branch, fixes every eligible finding
-                 in one pass, exactly one unit test per fix, builds, tests
-    → push: commit lands on the PR branch → re-scan fires automatically
-    → gate: all green → merge allowed; anything refused → escalate, blocked
+    → itrack: OPTIONAL, default OFF — Jira ticket per group, rule suggestion
+              attached, Jira key written back onto the Sonar finding
+    → remediate: container pulls the PR branch, fixes every eligible finding in
+                 one pass. DETERMINISTIC CODEMOD FIRST, ALWAYS — an agentic call
+                 happens only where no codemod exists for that rule.
+                 Exactly one unit test per fix. Build. Test.
+    → push: commit lands on the PR branch → re-scan fires automatically (capped)
+    → settle: green → OPTIONAL auto-merge, default OFF
+              red   → merge stays blocked
+    → notify: OPTIONAL, default OFF — ONE Teams message at the terminal state:
+              "ready", or "red because <deterministic reason>"
     → reset: one click back to the pristine baseline
 ```
+
+| Input | Default | What it adds |
+|---|---|---|
+| `itrack` | `false` | Jira tickets |
+| `teams_notify` | `false` | the terminal Teams message |
+| `auto_merge` | `false` | merge the PR when the gate goes green |
+
+**Off by default means the out-of-the-box pipeline is silent and does not merge** — it scans, fixes, pushes and stops. That is the right default, and it means the experience above is the *switches-on* configuration. The defaults are safe, not complete.
+
+**An agentic call is permitted at exactly one point in the entire system**: generating a fix for a finding whose rule has no deterministic codemod. Grouping, fingerprinting, eligibility, test generation for codemod fixes, the red-because reason, Jira bodies and the merge decision are all deterministic. On the sandbox catalogue that is **17 findings fixed with zero LLM involvement, 10 reaching Claude, 2 refused** — a ratio the pipeline reports per run, because it is the project's whole economic argument.
 
 Every arrow is gated. No stage runs on the assumption the previous one worked. The loop closes on itself — the push is what re-triggers the scan — so the guards against self-triggering are load-bearing rather than defensive.
 
