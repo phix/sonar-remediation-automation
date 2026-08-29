@@ -225,12 +225,26 @@ The constraint that shapes the fingerprint format: **Jira labels cannot contain 
 
 The JQL `labels = "gf-<hex>"` is an exact match, which is what dedupe wants.
 
-**UNVERIFIED:** whether the free plan restricts label length. The verification script creates an issue carrying a realistic-length fingerprint label and reads it back.
+**Verified 2026-08-29:** a 43-character `gf-<40 hex>` label was applied and read back intact on the free plan, and an exact-match JQL lookup on it works. Labels are a viable dedupe key — subject to the index lag in §5.3b.
+
+### 5.3b JQL search is asynchronous — dedupe must not assume read-after-write
+
+**Measured 2026-08-29 on the live `SONAR` project.** A search issued immediately after creating an issue does **not** find it; the same JQL succeeds after ~2 seconds. Jira's JQL index updates asynchronously from the write.
+
+This is not a curiosity — it is a correctness constraint on planning:
+
+- **Two planning runs in quick succession would create duplicate Jira issues.** Run 2's dedupe search would not yet see the issue run 1 just created, which is precisely the duplicate-issue problem source spec §2.3 exists to prevent.
+- The mitigation is not a `sleep`. **The plan JSON is the source of truth** (spec §4.1), so the dedupe order must be: consult the plan's known `group_fingerprint → issue_key` mapping **first**, and use the Jira search only as a backstop for issues the plan does not know about.
+- Where a search genuinely must follow a write — verifying a supersede, say — it needs bounded retry, not a fixed delay. 2s was this measurement; it is not a guarantee.
+
+`scripts/verify-api-contracts.sh` retries with backoff and reports the observed lag rather than failing, so the number stays current as Atlassian's infrastructure changes.
 
 ### 5.4 Transitions — never hardcode ids
 
 - `GET /rest/api/{2,3}/issue/{key}/transitions` → available transitions **from the issue's current status**
 - `POST` the same path with `{"transition": {"id": "<id>"}}`
+
+Live from the `SONAR` project: `11 → To Do`, `21 → In Progress`, plus In Review and Done. **These ids are meaningless anywhere else.**
 
 **Transition ids are per-workflow and differ between sites and even projects.** The automation must fetch transitions and match on `to.name`, never carry a hardcoded id. A hardcoded id is the classic thing that works in the sandbox and fails on the office Jira.
 
@@ -283,10 +297,16 @@ The hedge that makes this safe: put body construction behind **one function** (`
 
 These cannot be settled from documentation and are exactly why [`scripts/verify-api-contracts.sh`](../../scripts/verify-api-contracts.sh) exists:
 
+**Jira: all settled 2026-08-29** — 11 checks passed against the live `SONAR` project. Raw results: [`api-contracts-verified.md`](api-contracts-verified.md).
+
 - [x] ~~Which severity fields come back~~ — **both, always**; settled in §3 against 100 real issues
+- [x] ~~Jira project style and real status list~~ — `next-gen` (team-managed), 4 statuses
+- [x] ~~Available transition names~~ — readable by name; ids are project-local and must never be hardcoded
+- [x] ~~Label length tolerance~~ — 43-char fingerprint label round-trips fine
+- [x] ~~`POST /search/jql` behaviour, and old `/search` really 410~~ — both confirmed exactly as documented
+- [x] **New, unanticipated:** JQL index lag ~2s — see §5.3b, it changes the dedupe order
+
+**Still open, all gated on the sandbox project existing:**
+
 - [ ] Whether `hash` coverage holds for **JS/TS** specifically (100% on Java; re-check on the sandbox)
 - [ ] Whether a genuinely read-only Sonar token is achievable
-- [ ] The Jira project style (team-managed vs company-managed) and its real status list
-- [ ] Available transition names from each status
-- [ ] Label length tolerance for fingerprints
-- [ ] That `POST /search/jql` behaves as documented, and that old `/search` really is 410 on this site

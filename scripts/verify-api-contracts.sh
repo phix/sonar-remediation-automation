@@ -227,12 +227,28 @@ else
   if [ -n "$KEY" ]; then
     ok "created probe issue \`$KEY\` with a ${#FP}-char fingerprint label (v2, plain-text description)"
 
-    rb=$(curl "${JA[@]}" -X POST "$JB/search/jql" \
-         -d "{\"jql\":\"project = ${JIRA_PROJECT_KEY} AND labels = \\\"${FP}\\\"\",\"maxResults\":5,\"fields\":[\"key\"]}")
-    if [ "$(echo "$rb" | jq -r '[.issues[].key] | index("'"$KEY"'") // "no"')" != "no" ]; then
-      ok "fingerprint-label dedupe lookup round-trips — labels are a viable dedupe key"
+    # Jira's JQL index is asynchronous: an issue created milliseconds ago is not
+    # yet searchable. Retry with backoff and report how long it actually took --
+    # that latency is a real constraint on the planning workflow's dedupe.
+    found=""; waited=0
+    for delay in 0 2 3 5 10; do
+      [ "$delay" -gt 0 ] && sleep "$delay"
+      waited=$((waited + delay))
+      rb=$(curl "${JA[@]}" -X POST "$JB/search/jql" \
+           -d "{\"jql\":\"project = ${JIRA_PROJECT_KEY} AND labels = \\\"${FP}\\\"\",\"maxResults\":5,\"fields\":[\"key\"]}")
+      if [ "$(echo "$rb" | jq -r '[.issues[].key] | index("'"$KEY"'") // "no"')" != "no" ]; then
+        found=yes; break
+      fi
+    done
+    if [ -n "$found" ]; then
+      if [ "$waited" -eq 0 ]; then
+        ok "fingerprint-label dedupe lookup round-trips immediately"
+      else
+        ok "fingerprint-label dedupe works, but only after ~${waited}s of JQL index lag -- dedupe must not assume read-after-write"
+      fi
+      echo "- **JQL index lag measured: ~${waited}s.** A search issued immediately after a create will not see it." >> "$OUT"
     else
-      bad "label lookup did NOT find the issue — labels are not a reliable dedupe key here"
+      bad "label lookup never found the issue even after ${waited}s -- labels are not a reliable dedupe key here"
     fi
 
     tr=$(curl "${JA[@]}" "$JB/issue/${KEY}/transitions")
