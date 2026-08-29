@@ -1,0 +1,71 @@
+# Build, test and smell-check the sandbox app inside CI containers.
+#
+# This is the build/test half of the execute workflow, running standalone so
+# the container contract can be re-proved on demand rather than only when a
+# remediation happens to run. It is also the evidence for the container
+# decision in docs/decisions/ci-container.md: two jobs, two shapes, both
+# reporting their toolchain versions into the log.
+name: sandbox-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      sandbox_ref:
+        description: Ref of phix/sonar-sandbox-app to build
+        default: main
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  bootstrap:
+    # The heavy path. A stock base image that knows nothing about this project
+    # installs its own toolchain and clones the source, which is what the
+    # execute workflow needs: a JRE 21+ for the Sonar scanner, and a runner
+    # whose behaviour is reproducible on a laptop.
+    name: bootstrap (ubuntu:24.04)
+    runs-on: ubuntu-latest
+    container: ubuntu:24.04
+    steps:
+      # actions/checkout needs git present, and a bare base image has none.
+      # Installing it here rather than baking an image is the whole point.
+      - name: Install git for checkout
+        run: |
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends ca-certificates git >/dev/null
+
+      - uses: actions/checkout@v5
+
+      - name: Bootstrap toolchain, clone sandbox, build and test
+        env:
+          SANDBOX_REF: ${{ inputs.sandbox_ref }}
+        run: ./scripts/ci-bootstrap.sh
+
+  smell-oracle:
+    # The light path. Recon and planning need node and jq, never a JRE, so they
+    # pay for a stock image instead of a full bootstrap.
+    name: smell oracle (node:24-bookworm)
+    runs-on: ubuntu-latest
+    container: node:24-bookworm
+    steps:
+      - name: Toolchain versions
+        run: |
+          node --version
+          npm --version
+          jq --version || echo "jq absent from this image"
+
+      - uses: actions/checkout@v5
+        with:
+          repository: phix/sonar-sandbox-app
+          ref: ${{ inputs.sandbox_ref }}
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # The catalogue is the oracle the whole pipeline is measured against. If
+      # it has drifted from the tree, every downstream assertion is measuring
+      # the wrong thing, so this fails loudly rather than reporting a clean run.
+      - name: Verify the planted smell catalogue still matches the tree
+        run: npm run smells:verify
