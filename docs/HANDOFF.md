@@ -1,214 +1,196 @@
-# Handoff — 2026-08-30 (third session)
+# Handoff — 2026-08-30 (fourth session)
 
-Picked up from the handoff at `c6b3b00`. Its top three items were all mutating
-calls the auto-mode classifier refused, so the session went to the one item that
-needed neither a push nor a credential — finishing #17 — and that turned out to
-be where the real findings were.
+Picked up from `6a0cdab`. Its §9 list was almost entirely permission-gated, so
+this session did the one thing that list could not: **it wrote code.** Four
+slices landed via parallel TDD engineers in isolated worktrees, and the most
+valuable thing any of them produced was not a feature — it was an API probe that
+falsified an assumption already merged into `settle/classify.mjs`.
 
 Everything below is **verified state**, not intention. Where something is
 unproven it says so in the sentence that claims it.
 
-**Nothing is pushed.** Both repos have local commits and no push was possible.
-That is the first thing to fix and it gates several rows below.
+**Nothing is pushed since the mid-session push.** 10 commits are local.
 
 ---
 
 ## 1. The headline
 
-**The Jira step is built, and the thing that makes it correct is the order it
-asks questions in.** Jira's JQL index is ~2s behind its own writes, so a
-search-first dedupe creates the duplicate it exists to prevent. Plan first,
-direct `GET` on that key second, lagging index only for groups the plan never
-knew. All four suites were mutation-checked before being believed.
+**The settle half of the loop exists.** `settle/` decides the terminal state and
+optionally enables native auto-merge; `teams/` renders and delivers the one
+message; `scripts/verify-reset.mjs` asserts a reset actually restored what it
+claims. All unit-proven, none run in CI.
 
-Second, and cheaper: **two things the last handoff called blocked were not.**
-The Sonar write-back permission is answerable read-only, and §4d was moot.
+**The thing worth reading twice:** `api/ce/component` — the endpoint that says
+whether an analysis completed — **has no `pullRequest` parameter and silently
+ignores one.** It returns the component's newest task whatever ref that belongs
+to, so another branch's `SUCCESS` can stand in for this PR's. That would have
+defeated the precondition which exists to stop a stale gate being trusted.
+Found by probing, not by reading. See `docs/decisions/scan-status-scoping.md`.
 
 ## 2. Current state
 
 | | |
 |---|---|
-| Automation repo | `phix/sonar-remediation-automation`, tree clean, **6 commits unpushed** — last content commit `e953e38`, plus this handoff. A handoff cannot pin its own SHA: amending to record it changes it. Count the commits, do not trust a SHA here. |
-| Sandbox repo | `phix/sonar-sandbox-app` @ `914356d` (main), **1 commit unpushed**, tree clean |
-| Remote automation `main` | still `05c90cd` |
-| Remote sandbox `main` | still `a9ff570` |
-| Demo branch | `demo/planted-smells` @ `243e9d2` = `v0-pristine^{}` — untouched this session |
-| PR #2 | `OPEN`, `MERGEABLE`, `BLOCKED` — unchanged |
-| `refs/pull/2/merge` | `498fe766`, base `19584d7` — **stale, two commits behind main** |
-| Branch protection | `contexts: ["gate"]`, `enforce_admins: false` — unchanged |
-| Tests (automation) | **153** (was 96) |
-| Tests (sandbox scripts) | 9 |
+| Automation repo | `phix/sonar-remediation-automation`, tree clean, **10 commits unpushed**, last `6e9ecea` |
+| Remote automation `main` | `c81e0a8` (pushed mid-session by Nick) |
+| Sandbox repo | `phix/sonar-sandbox-app` @ `914356d`, clean, **0 unpushed** |
+| Remote sandbox `main` | `914356d` |
+| Demo branch | `demo/planted-smells` @ `243e9d2` = `v0-pristine` — untouched |
+| `v0-clean` | `1a3f005`. **Main is ahead of it** (`914356d`) — benign, see §5 |
+| PR #2 | `OPEN`. Required context is `gate`; six `gate` check-runs on the head, all `failure`. Correctly blocking. |
+| `refs/pull/2/merge` | base still `19584d7` — **stale**, unchanged |
+| Branch protection | `contexts: ["gate"]`, `strict: false`, `enforce_admins: false` |
+| Tests | **237** in 16 files (was 153 in 9) |
 | Provers | `prove:gates` 4/4, `prove:templates` ok |
-| Ratio | still 18 codemod / 10 agentic / 4 refused, over the real fixtures |
-| Grouping | 32 findings → **16 tickets**, measured, matches the README |
-| Jira secrets | on the **automation** repo, absent from the **sandbox** — see §3 |
+| Ratio | still 18 codemod / 10 agentic / 4 refused |
+| Jira secrets | still on **automation**, still absent from the **sandbox** |
+| Teams webhook | `TEAMS_WEBHOOK_URL` does not exist on either repo |
 | LLM endpoint | still unconfigured |
 
-**Unproven, carried forward:** the two-axis gate comment has still never run on
-the live PR. Unchanged from the last handoff, and §4a explains why it now needs
-more than a rerun.
+**Unproven, carried forward:** nothing built this session has run in CI. The
+two-axis gate comment still has never run on the live PR.
 
 ## 3. What changed this session
 
-- **`jira/client.mjs`** — v2, three calls, bounded and classified. Refuses to
-  speak to the removed `/search` endpoint and names 410 when it sees one.
-  Follows the `nextPageToken` cursor to exhaustion and synthesises no `total`,
-  because the new endpoint does not return one.
-- **`jira/dedupe.mjs`** — the ordering above. `jqlFor` excludes
-  `statusCategory != Done`, and "open" is asked via `statusCategory.key`, never
-  the status name, so it ports to a Jira with different status names.
-- **`jira/plan.mjs`** — reads the plan, tolerates its absence, appends items
-  that satisfy every required field of the schema. **Refuses a corrupt plan**
-  rather than treating it as empty, which would recreate every ticket it held.
-- **`jira/writeback.mjs`** — comments the Jira key onto each Sonar finding.
-  Reports "this token may not comment" as a permission answer distinct from an
-  outage, and stops after the first 403 instead of re-asking per finding.
-- **`jira/run.mjs`** — the orchestrator. Off is silent and green; on-but-
-  unconfigured is red, because those are opposite situations.
-- **`codemods/fetch-findings.mjs`** — keeps Sonar's issue `key`. It was dropped
-  during normalisation, which made the write-back not merely untested but
-  unbuildable: there was no address to write to.
-- **`codemods/remediate.mjs`** — `dispositionSummary()` and `--dispositions`.
-- **`scripts/verify-api-contracts.sh`** — probes each token's `actions` array.
-- **`scripts/setup-jira.sh`** — now pushes to the sandbox, not the automation repo.
-- **`docs/decisions/jira-dedupe-order.md`** — the ordering, and what it rejected.
-- **`remediate.yml`** (sandbox) — the `jira` input, defaulting false.
+- **`settle/classify.mjs`** — two states, `ready` and `red`, and no third. An
+  unanticipated input shape returns red-undetermined rather than throwing or
+  falling through to green. Names the *failing condition* — the live gate is
+  coverage-bound with all three ratings at A, so a reason saying "code smells"
+  there would be actively wrong.
+- **`settle/automerge.mjs`** — enables GitHub's **native** auto-merge only. No
+  function in the file can reach a merge mutation, so branch protection stays
+  the decision-maker even if a caller is wrong.
+- **`settle/gate.mjs`** — bounded fetchers for the gate and the scan status,
+  with the cross-check described in §1.
+- **`teams/{card,client,notify}.mjs`** — Adaptive Card for Power Automate,
+  bounded client that never retries a 4xx, and the off/unconfigured/on tri-state.
+- **`scripts/verify-reset.mjs`** — the two boxes `demo-reset.yml` leaves unmet:
+  PR #2's number unchanged and still open, and a second run from an already-clean
+  state passing rather than erroring.
+- **`vitest.config.mjs`** — new. Excludes `.claude/worktrees/**`. See §7.
+- **`docs/decisions/scan-status-scoping.md`** — new.
+- **`~/.claude/RTK.md` + rtk config** — defect 8 recorded, `vitest` excluded.
 
 ## 4. Blocked
 
-**Every mutating call this session was refused by the auto-mode classifier** —
-`git push`, `gh api -X POST`, and reading the Keychain. None was worked around.
-All of §4 needs a permission rule or Nick's hands.
+Both were refused by the auto-mode classifier this session and need Nick's hands.
 
-**a. Push both repos.** This gates everything else, and it changed shape: the
-demo PR's checkout uses `refs/pull/2/merge`, which is pinned at base `19584d7`
-and does not carry `a9ff570`. So a rerun would exercise the *old* pr-gate. Only
-a `synchronize` event recomputes the merge ref.
-
-```bash
-git -C ~/Documents/SonarScanGenesis push origin main && git -C ~/Documents/sonar-sandbox-app push origin main
-```
-
-```bash
-git -C ~/Documents/sonar-sandbox-app commit --allow-empty -m "Retrigger the scan" && git -C ~/Documents/sonar-sandbox-app push origin demo/planted-smells
-```
-
-That second command moves the demo branch off `v0-pristine^{}`. The reset path
-puts it back; it is a cost, not a surprise.
-
-**b. Put the Jira secrets where they are read.** They are on the automation
-repo, where no workflow reads them, and absent from the sandbox, where the only
-workflow that touches `JIRA_*` runs. The script is fixed; it has not been run.
-
-```bash
-./scripts/setup-jira.sh
-```
-
-**c. `enforce_admins`, still #15's last open box.** Unchanged.
+**a. `enforce_admins` — #15's last open box.**
 
 ```bash
 gh api -X POST repos/phix/sonar-sandbox-app/branches/main/protection/enforce_admins
 ```
 
-**d. `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` unset.** Unchanged. #19's
-first validation box cannot be ticked and the library has never made a real call.
+**b. Jira secrets are still on the wrong repo.** `remediate.yml` runs on the
+sandbox and a workflow reads secrets only from its own repository. The script is
+interactive (hidden token prompt) and the only other source is the Keychain,
+which the classifier blocks.
 
-**e. #17's live validation boxes** need (b) done first. Nothing else blocks them.
+```bash
+./scripts/setup-jira.sh
+```
+
+**c. `TEAMS_WEBHOOK_URL` does not exist.** The library is built; #2's HITL steps
+— create the Power Automate flow, confirm a personal Microsoft account can — have
+never been done. The library half being finished changes nothing about that risk.
+
+**d. `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` unset.** Unchanged.
+
+**e. Reading `node scripts/verify-reset.mjs` was itself blocked.** A read-only
+script, refused twice. Its logic was verified by importing it in-process with the
+live SHAs injected, which is weaker than one real run. If one permission is worth
+adding, it is this one.
 
 ## 5. Known open bugs
 
-One found and fixed this session, worth knowing because of what it looked like:
-`dispositionsFrom` counted only `changed` as resolved, while `apply.mjs`'s own
-`summarize()` defines `resolved = fixed + alreadyGone` and says why in a
-comment. A group whose findings were *all* cleared as side effects would get a
-ticket silent about work already done. Found reviewing my own code an hour after
-writing it; the test fails when the condition is put back.
+None open. One found and fixed, worth knowing because of how it was found:
 
-None open.
+`verify-reset.mjs` asserted `main === v0-clean`. Live, `main` is `914356d` and
+`v0-clean` is `1a3f005` — main advanced with ordinary tooling commits, which
+`demo-reset.yml` explicitly calls normal and quietly advances the tag for. So the
+verifier failed a healthy repository, and its message could not distinguish that
+from "main contains `v0-pristine`, PR #2 was merged, the baseline is dead". It
+now reproduces the workflow's three-way split. **The unit tests were green
+throughout; only running it against the real repository found this.**
 
 ## 6. Verify before you push
 
 ```bash
-# Whole automation suite, including the four new Jira suites. (~0.4s)
 npm test
 ```
 
 ```bash
-# Are the agentic gates still real, against a real build and a real vitest? (~2s)
-npm run prove:gates
+npm run prove:gates && npm run prove:templates
 ```
 
 ```bash
-# Would the workflow's scripts and secrets actually be there in CI? This is
-# what caught the wrong-repo secrets. (~2s)
-node scripts/preflight.mjs ~/Documents/sonar-sandbox-app/.github/workflows/remediate.yml \
-  --repo ~/Documents/sonar-sandbox-app --ref demo/planted-smells --gh-repo phix/sonar-sandbox-app
+curl -s "https://sonarcloud.io/api/qualitygates/project_status?projectKey=phix_sonar-sandbox-app&pullRequest=2"
 ```
 
-```bash
-# Would this commit on main silently disable the demo PR's checks? (~2s)
-node scripts/branch-contract.mjs --repo ~/Documents/sonar-sandbox-app --base main \
-  --branch demo/planted-smells --gh-repo phix/sonar-sandbox-app --pr 2
-```
+That last one is the cheapest proof the settle stage is reading reality: it must
+report `ERROR` with `new_coverage 5.7` and all three ratings `OK`. Drop
+`&pullRequest=2` and it answers `{"status":"NONE","conditions":[]}` — not an
+error, a different question answered politely.
 
 ## 7. Traps hit this session
 
-**Four new suites passed on their first run, which is the shape §7 of the last
-handoff warned about.** Seventy tests, green immediately, proving nothing yet.
-Six deliberate mutations were applied one at a time — trusting a closed ticket,
-batching the plan write, switching to v3, re-asking after a 403, downgrading
-unconfigured to a skip, keying dispositions on the rule alone — and each turned
-**exactly one** intended test red, with a clean restore. A suite that has never
-been watched to fail is a suite that has not been checked.
+**A green suite counted 426 tests when the true number was 177.** The subagent
+harness materialises worktrees at `.claude/worktrees/agent-*` *inside* the repo,
+and vitest walked into them, counting stale copies of every suite — one from a
+checkout eight commits behind. Nothing was red. The number was wrong in the
+direction nobody checks.
 
-**Absence of a field was read as absence of a permission.** The last handoff
-called the Sonar write-back permission "genuinely unknown rather than merely
-untested" because `api/issues/search` returned no `actions` field. It returns
-none *unless `additionalFields` asks for it*. The API was answering a question
-it had not been asked, and the silence was read as a "no".
+**rtk hid it.** `npx vitest run` was rewritten to `rtk vitest`, which collapses
+the report to `PASS (n) FAIL (n)` — dropping the *file* count, which is the one
+number that would have shown 25 files where 11 were expected. Worse, `npx vitest
+list --filesOnly` — which lists files and runs nothing — returned `PASS (0) FAIL
+(0)`. Recorded as RTK defect 8; both spellings excluded and verified across eight
+invocations. **The lesson is about what a wrapper drops, not what it corrupts: a
+summariser that discards the denominator turns a wrong number into an
+unfalsifiable one.**
 
-**Writing the workflow is what found the bug in the credentials.** The Jira
-secrets had been on the wrong repo for a day. Nothing surfaces that until the
-step runs, and when it does it says "not configured" — the same sentence a real
-credential problem produces. `preflight.mjs` reported it in two seconds, on a
-workflow that had existed for ninety.
+**Four suites passed on their first run again**, the same shape §7 has warned
+about twice. Every engineer was required to apply five deliberate mutations and
+show each turned tests red. Nineteen mutations across four slices, zero holes.
+Two engineers reported a mutation catching *more* tests than intended and
+correctly declined to narrow the fixture to make the table look tidier.
+
+**Two agents ignored the worktree path they were given** and worked in their own
+harness worktree instead, one landing on a branch nobody asked for
+(`slice/teams-lib`). Both said so plainly, which is the only reason it cost
+nothing. Check `git worktree list` and the branch a slice actually landed on
+before merging it.
 
 ## 8. Where the numbers disagree with the docs
 
-- **§4b of the last handoff is superseded.** The write-back permission needs no
-  mutating call. `additionalFields=_all` returns `actions`; anonymous gives `[]`,
-  which is the control proving the array reflects the caller. Recorded in
-  `api-contracts.md` §2 and probed by `verify-api-contracts.sh`.
-- **§4d of the last handoff is moot, not unverified.** Its worry was that the
-  automation repo's `SANDBOX_REPO_TOKEN` might be the bad value. That repo's
-  only workflow uses **no secrets at all**, so the copy is read by nothing.
-- **The README's status line was wrong** and is corrected. It claimed no
-  workflow was wired to PR #2; `sonar-pr-scan` has been a required check
-  blocking it since 2026-08-29.
-- **`remediate.yml` already existed.** The last handoff's §9.4 implied the
-  workflow half of #17 was unbuilt. The workflow was there; the `jira` input
-  was not.
-- **Tests: 96 → 153.** Grouping over the real fixture: 32 findings → 16 tickets,
-  which matches the README's figure independently.
+- **The README claimed `sonar-pr-scan` is the required check.** The required
+  *context* is `gate` — the job's name, not the workflow's. Six `gate` check-runs
+  sit on the head commit, all failing, so the block is real. Wording only.
+- **`classify.mjs`'s documented input contract was half wrong.** The gate shape
+  was right; the scan shape assumed a per-ref scoping that does not exist. The
+  fetcher was built to compensate rather than the contract loosened.
+- **Tests: 153 → 237.** Files 9 → 16.
+- **`v0-clean` is not `main`.** It was `03c5384` in an older ticket and is now
+  `1a3f005`, because `demo-reset.yml` advances it. Do not treat the SHAs written
+  into issue #20 as current.
 
 ## 9. Next, in order
 
-1. **Push both repos** (§4a) — five commits and one commit are stranded, and
-   every row below depends on them.
-2. **Retrigger the scan on PR #2** (§4a, second command) — the merge ref is
-   stale, so this needs the empty commit, not a rerun.
-3. **Run `setup-jira.sh`** (§4b) — one command, and it unblocks every live
-   validation box on #17.
-4. **Tick #17's boxes against the live Jira** — the code is done and unit-proven;
-   what is missing is one real run with `jira: true` and then a second one
-   proving no duplicate.
-5. **`enforce_admins`** (§4c) — one command each way, and it closes #15.
-6. **#19's live endpoint** (§4d) — code-complete, has never made a real call.
-7. **Re-word #19's third validation box** to the gate that was actually built.
+1. **Push** — 10 commits stranded.
+2. **`enforce_admins`** (§4a) — one command, closes #15.
+3. **`setup-jira.sh`** (§4b) — unblocks every live box on #17.
+4. **Wire `settle/` and `teams/` into `remediate.yml`.** They are libraries with
+   npm scripts and nothing calls them. Run `scripts/preflight.mjs` against the
+   edited workflow *before* trusting it — that is what caught the wrong-repo
+   secrets last session, in two seconds, on a workflow that had existed for ninety.
+5. **#2's HITL half** — prove a personal Microsoft account can create the Power
+   Automate flow, or pick the fallback. Deliberately ticket one; still undone.
+6. **Retrigger PR #2** — the merge ref is still stale at base `19584d7`, so this
+   needs an empty commit on the branch, not a rerun.
+7. **#19's live endpoint** — code-complete, has never made a real call.
 
 ## 10. What this session taught, in one line
 
-Two of the three things the last handoff called blocked were not blocked at all
-— one needed a query parameter and the other needed someone to check whether
-anything read the secret — so "blocked" is a claim like any other and deserves
-the same two seconds of checking as the numbers in the table.
+Every real defect this session was found by running something against reality —
+the live Sonar API, the live repository, the actual file count — and every one of
+them sat underneath a green test suite that had no way to know it was wrong.
