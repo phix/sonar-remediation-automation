@@ -16,7 +16,8 @@
     "prove:gates": "node codemods/agentic/prove-gates.mjs",
     "prove:templates": "node codemods/prove-templates.mjs",
     "jira": "node jira/run.mjs",
-    "teams": "node teams/notify.mjs"
+    "teams": "node teams/notify.mjs",
+    "settle": "node settle/run.mjs"
   },
   "dependencies": {
     "jscodeshift": "^17.3.0",
