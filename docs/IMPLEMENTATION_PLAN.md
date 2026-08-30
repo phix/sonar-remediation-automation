@@ -1,6 +1,6 @@
 # Sonar Remediation Sandbox — Implementation Plan
 
-**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
+**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · settle stage (`settle/`), Teams library (`teams/`) and the reset verifier (`scripts/verify-reset.mjs`) landed 2026-08-30, all unit-proven and none yet run in CI · #2 has its library half but still needs the Power Automate webhook proven by hand · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
 **Owner:** Nick Ratliff (`phix`) · **Feedback channel:** Microsoft Teams
 
 ---
