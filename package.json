@@ -4,13 +4,18 @@
   "private": true,
   "type": "module",
   "description": "Deterministic-first remediation of SonarQube findings.",
-  "engines": { "node": ">=22" },
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "test": "vitest run",
-    "codemods:apply": "node codemods/apply.mjs"
+    "codemods:apply": "node codemods/apply.mjs",
+    "preflight": "node scripts/preflight.mjs",
+    "branch-contract": "node scripts/branch-contract.mjs"
   },
   "dependencies": {
-    "jscodeshift": "^17.3.0"
+    "jscodeshift": "^17.3.0",
+    "yaml": "^2.9.0"
   },
   "devDependencies": {
     "vitest": "^4.0.8"

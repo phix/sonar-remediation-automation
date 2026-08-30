@@ -1,0 +1,258 @@
+[
+ {
+  "rule": "javascript:S1128",
+  "file": "api/src/app.js",
+  "line": 2,
+  "severity": "MINOR",
+  "message": "Remove this unused import of 'randomUUID'.",
+  "hash": "93c255e458941acfe703078ccb676090"
+ },
+ {
+  "rule": "javascript:S7737",
+  "file": "api/src/auth/session.js",
+  "line": 32,
+  "severity": "MINOR",
+  "message": "Do not use an object literal as default for parameter `options`.",
+  "hash": "a645690dbdbbc01489fadde5fef18c40"
+ },
+ {
+  "rule": "javascript:S2004",
+  "file": "api/src/auth/session.js",
+  "line": 45,
+  "severity": "CRITICAL",
+  "message": "Refactor this code to not nest functions more than 5 levels deep.",
+  "hash": "be4ad1df8461e55e4836a85dc014f450"
+ },
+ {
+  "rule": "javascript:S7765",
+  "file": "api/src/auth/session.js",
+  "line": 47,
+  "severity": "MINOR",
+  "message": "Use `.includes()` instead of `.some()` when checking value existence.",
+  "hash": "a360c5c1e968bd971118159026ca6173"
+ },
+ {
+  "rule": "javascript:S1121",
+  "file": "api/src/auth/token-verifier.js",
+  "line": 33,
+  "severity": "MAJOR",
+  "message": "Extract the assignment of \"parts\" from this expression.",
+  "hash": "07b98deecf918cef007dc4a21c0e9c00"
+ },
+ {
+  "rule": "javascript:S3504",
+  "file": "api/src/reports/summary.js",
+  "line": 8,
+  "severity": "CRITICAL",
+  "message": "Unexpected var, use let or const instead.",
+  "hash": "304a4de156b657227b1bf505d05690ec"
+ },
+ {
+  "rule": "javascript:S3504",
+  "file": "api/src/reports/summary.js",
+  "line": 9,
+  "severity": "CRITICAL",
+  "message": "Unexpected var, use let or const instead.",
+  "hash": "55241c657a63140ddb7d1c95dbd32059"
+ },
+ {
+  "rule": "javascript:S4144",
+  "file": "api/src/reports/summary.js",
+  "line": 20,
+  "severity": "MAJOR",
+  "message": "Update this function so that its implementation is not identical to the one on line 12.",
+  "hash": "4c32b90ca39a23be5ec4e97b86130af0"
+ },
+ {
+  "rule": "javascript:S4144",
+  "file": "api/src/reports/summary.js",
+  "line": 39,
+  "severity": "MAJOR",
+  "message": "Update this function so that its implementation is not identical to the one on line 28.",
+  "hash": "b99ff29be548fcf4f889484797d2778c"
+ },
+ {
+  "rule": "javascript:S1854",
+  "file": "api/src/reports/summary.js",
+  "line": 51,
+  "severity": "MAJOR",
+  "message": "Remove this useless assignment to variable \"total\".",
+  "hash": "a929d159119e18cc3f98561635dfa0cd"
+ },
+ {
+  "rule": "javascript:S3776",
+  "file": "api/src/reports/summary.js",
+  "line": 65,
+  "severity": "CRITICAL",
+  "message": "Refactor this function to reduce its Cognitive Complexity from 32 to the 15 allowed.",
+  "hash": "5accdb622255976bf2aff3cfef2d9401"
+ },
+ {
+  "rule": "javascript:S6582",
+  "file": "api/src/reports/summary.js",
+  "line": 78,
+  "severity": "MINOR",
+  "message": "Prefer using an optional chain expression instead, as it's more concise and easier to read.",
+  "hash": "a5b5142754c2cf19940866b16b8a2c5d"
+ },
+ {
+  "rule": "javascript:S6582",
+  "file": "api/src/reports/summary.js",
+  "line": 87,
+  "severity": "MINOR",
+  "message": "Prefer using an optional chain expression instead, as it's more concise and easier to read.",
+  "hash": "26cd669f8ec43677c095af6ebf212ebc"
+ },
+ {
+  "rule": "javascript:S6582",
+  "file": "api/src/reports/summary.js",
+  "line": 97,
+  "severity": "MINOR",
+  "message": "Prefer using an optional chain expression instead, as it's more concise and easier to read.",
+  "hash": "813ae76642563c4a9f6ed5bf0fcef4fc"
+ },
+ {
+  "rule": "javascript:S1128",
+  "file": "api/src/routes/orders.js",
+  "line": 2,
+  "severity": "MINOR",
+  "message": "Remove this unused import of 'VALID_STATUSES'.",
+  "hash": "a03d33696a56cc5780edd5029545253d"
+ },
+ {
+  "rule": "javascript:S1481",
+  "file": "api/src/routes/orders.js",
+  "line": 7,
+  "severity": "MINOR",
+  "message": "Remove the declaration of the unused 'legacyPageSize' variable.",
+  "hash": "9c2703d0c4a141366a7325c5959dc6fc"
+ },
+ {
+  "rule": "javascript:S1854",
+  "file": "api/src/routes/orders.js",
+  "line": 7,
+  "severity": "MAJOR",
+  "message": "Remove this useless assignment to variable \"legacyPageSize\".",
+  "hash": "9c2703d0c4a141366a7325c5959dc6fc"
+ },
+ {
+  "rule": "javascript:S1481",
+  "file": "api/src/services/order-service.js",
+  "line": 8,
+  "severity": "MINOR",
+  "message": "Remove the declaration of the unused 'cacheTtlSeconds' variable.",
+  "hash": "3040c7743701285b508e55a509ea730a"
+ },
+ {
+  "rule": "javascript:S1854",
+  "file": "api/src/services/order-service.js",
+  "line": 8,
+  "severity": "MAJOR",
+  "message": "Remove this useless assignment to variable \"cacheTtlSeconds\".",
+  "hash": "3040c7743701285b508e55a509ea730a"
+ },
+ {
+  "rule": "javascript:S3776",
+  "file": "api/src/services/order-service.js",
+  "line": 23,
+  "severity": "CRITICAL",
+  "message": "Refactor this function to reduce its Cognitive Complexity from 38 to the 15 allowed.",
+  "hash": "3f22dce586b8e04e01a449cd4a56287c"
+ },
+ {
+  "rule": "javascript:S1481",
+  "file": "api/src/store.js",
+  "line": 13,
+  "severity": "MINOR",
+  "message": "Remove the declaration of the unused 'seedCount' variable.",
+  "hash": "408eafa112d0d8892a49f4246648e9bf"
+ },
+ {
+  "rule": "javascript:S1854",
+  "file": "api/src/store.js",
+  "line": 13,
+  "severity": "MAJOR",
+  "message": "Remove this useless assignment to variable \"seedCount\".",
+  "hash": "408eafa112d0d8892a49f4246648e9bf"
+ },
+ {
+  "rule": "typescript:S1128",
+  "file": "web/src/app/orders/order-list/order-list.ts",
+  "line": 3,
+  "severity": "MINOR",
+  "message": "Remove this unused import of 'FormsModule'.",
+  "hash": "3c97685c86b9bdb24211a1d88d8c8880"
+ },
+ {
+  "rule": "typescript:S3504",
+  "file": "web/src/app/orders/order-stats.ts",
+  "line": 9,
+  "severity": "CRITICAL",
+  "message": "Unexpected var, use let or const instead.",
+  "hash": "090e70573681c5f8bd355ecfaff40130"
+ },
+ {
+  "rule": "typescript:S3504",
+  "file": "web/src/app/orders/order-stats.ts",
+  "line": 10,
+  "severity": "CRITICAL",
+  "message": "Unexpected var, use let or const instead.",
+  "hash": "304a4de156b657227b1bf505d05690ec"
+ },
+ {
+  "rule": "typescript:S4144",
+  "file": "web/src/app/orders/order-stats.ts",
+  "line": 47,
+  "severity": "MAJOR",
+  "message": "Update this function so that its implementation is not identical to the one on line 39.",
+  "hash": "50dd1eda9bf46b1e18076ab8d0bfd9a8"
+ },
+ {
+  "rule": "typescript:S3358",
+  "file": "web/src/app/orders/order-stats.ts",
+  "line": 58,
+  "severity": "MAJOR",
+  "message": "Extract this nested ternary operation into an independent statement.",
+  "hash": "843abefc2f84279caba84246c3012c3d"
+ },
+ {
+  "rule": "typescript:S3358",
+  "file": "web/src/app/orders/order-stats.ts",
+  "line": 60,
+  "severity": "MAJOR",
+  "message": "Extract this nested ternary operation into an independent statement.",
+  "hash": "28df3964a09e8dc0f43d7768d59dfcf5"
+ },
+ {
+  "rule": "typescript:S3358",
+  "file": "web/src/app/orders/order-stats.ts",
+  "line": 69,
+  "severity": "MAJOR",
+  "message": "Extract this nested ternary operation into an independent statement.",
+  "hash": "ee05a2ce0fb15e3bddc7c4c41ae65d78"
+ },
+ {
+  "rule": "typescript:S3358",
+  "file": "web/src/app/orders/order-stats.ts",
+  "line": 71,
+  "severity": "MAJOR",
+  "message": "Extract this nested ternary operation into an independent statement.",
+  "hash": "843abefc2f84279caba84246c3012c3d"
+ },
+ {
+  "rule": "typescript:S3776",
+  "file": "web/src/app/orders/order-stats.ts",
+  "line": 80,
+  "severity": "CRITICAL",
+  "message": "Refactor this function to reduce its Cognitive Complexity from 28 to the 15 allowed.",
+  "hash": "c0bd2c0eea398ea5a7f4529f71c87626"
+ },
+ {
+  "rule": "typescript:S1128",
+  "file": "web/src/app/orders/order.service.ts",
+  "line": 3,
+  "severity": "MINOR",
+  "message": "Remove this unused import of 'catchError'.",
+  "hash": "906941d4964115859c88dcbeb858d805"
+ }
+]
