@@ -62,7 +62,11 @@ if (!refExists()) {
   process.exit(2);
 }
 
-const doc = parse(readFileSync(workflow, 'utf8'));
+// Kept as raw text as well as parsed: `allText` below is JSON.stringify of
+// the parsed document, which has no comments in it at all, and the
+// optional-secret marker is a comment.
+const rawWorkflow = readFileSync(workflow, 'utf8');
+const doc = parse(rawWorkflow);
 const steps = Object.values(doc.jobs || {}).flatMap((j) => j.steps || []);
 const runScripts = steps.map((s) => s.run).filter(Boolean);
 const allText = JSON.stringify(doc);
@@ -117,6 +121,22 @@ if (pkgScripts) {
 // secret that was set and invalid cost two CI runs.
 const secrets = new Set([...allText.matchAll(/secrets\.([A-Z0-9_]+)/g)].map((m) => m[1]));
 secrets.delete('GITHUB_TOKEN');
+
+// Some secrets are genuinely optional: a tri-state step where absent means
+// "off, and that is the default" will PASS in CI without them, so reporting
+// them as "this workflow would fail" is a false alarm. And a preflight that
+// cries wolf is worse than no preflight -- this is the one check in the repo
+// that has actually caught a real bug in two seconds, and it only keeps that
+// value while every red line is real.
+//
+// Declared, never inferred. Guessing from the surrounding shell (`if [ -n
+// "$X" ]`) would make the answer depend on how a step happened to be written.
+// The workflow says so out loud:
+//
+//   # preflight: optional-secret TEAMS_WEBHOOK_URL
+const optionalSecrets = new Set(
+  [...rawWorkflow.matchAll(/#\s*preflight:\s*optional-secret\s+([A-Z0-9_]+)/g)].map((m) => m[1])
+);
 if (secrets.size) {
   if (!GH_REPO) {
     notes.push(`secrets referenced (${[...secrets].join(', ')}) — pass --gh-repo to check they are set`);
@@ -131,8 +151,13 @@ if (secrets.size) {
     if (present) {
       for (const s of secrets) {
         if (present.has(s)) ok.push(`secret ${s} — set on ${GH_REPO} (validity is the workflow's probe step to prove)`);
-        else problems.push(`MISSING  secret ${s} is not set on ${GH_REPO}. `
-          + `A workflow can only read secrets from the repo it runs in.`);
+        else if (optionalSecrets.has(s)) {
+          notes.push(`optional secret ${s} is not set on ${GH_REPO} — the workflow declares this `
+            + 'optional, so the step it guards stays off. Not a failure.');
+        } else {
+          problems.push(`MISSING  secret ${s} is not set on ${GH_REPO}. `
+            + `A workflow can only read secrets from the repo it runs in.`);
+        }
       }
     }
   }
