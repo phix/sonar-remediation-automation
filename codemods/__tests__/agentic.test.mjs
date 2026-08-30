@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { chat, configFromEnv, LlmUnavailable, TRANSIENT, PERSISTENT } from '../agentic/client.mjs';
+import { chat, configFromEnv, LlmUnavailable, TRANSIENT, PERSISTENT, DEFAULTS } from '../agentic/client.mjs';
 import { checkScope, partitionByScope, AGENTIC_RULES } from '../agentic/scope.mjs';
 import { parseProposal, buildPrompt } from '../agentic/proposal.mjs';
 import { admissible, stubSymbol } from '../agentic/validate.mjs';
@@ -60,6 +60,44 @@ describe('the client cannot hang and always classifies', () => {
     expect(err).toBeInstanceOf(LlmUnavailable);
     expect(err.classification).toBe(TRANSIENT);
     expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  // Regression, 2026-08-30. The default header budget was 10s, read as
+  // connect-and-first-byte. That is a STREAMING endpoint's timing. Against the
+  // real non-streaming endpoint (Ollama on tinman) the whole answer is
+  // generated before any header is sent: 19.5s measured warm, 54s cold. Every
+  // call died on the deadline and was reported as `infra_failure_transient` --
+  // a healthy server accused of being down. These pin the corrected model.
+  it('does not time out a non-streaming endpoint that generates before sending headers', async () => {
+    // Slower than the old 10s default; the fix must let it through.
+    const slow = () => new Promise((r) => setTimeout(() => r(ok('fixed source')), 30));
+    const f = fakeFetch([slow]);
+    const r = await chat(CONFIG, [], { ...NO_WAIT, fetchImpl: f, maxRetries: 0 });
+    expect(r.content).toBe('fixed source');
+    expect(f.calls.length).toBe(1);
+  });
+
+  it('budgets headers for generation, not for a handshake', () => {
+    // 54s cold was measured against tinman. A default at or below that turns a
+    // cold model load into a false "endpoint unavailable".
+    expect(DEFAULTS.headerTimeoutMs).toBeGreaterThan(60_000);
+    // The body is a small completed JSON document and must NOT be given
+    // whatever a slow generation happened to leave over.
+    expect(DEFAULTS.bodyTimeoutMs).toBeGreaterThan(0);
+    expect(DEFAULTS.bodyTimeoutMs).toBeLessThan(DEFAULTS.headerTimeoutMs);
+  });
+
+  it('sends stream:false, because the deadline model depends on it', async () => {
+    const f = fakeFetch([ok('x')]);
+    await chat(CONFIG, [], { ...NO_WAIT, fetchImpl: f, maxRetries: 0 });
+    expect(JSON.parse(f.calls[0].init.body).stream).toBe(false);
+  });
+
+  it('still honours the old option names, so the provers keep failing fast', async () => {
+    const f = fakeFetch([() => new Promise(() => {})]);
+    const err = await chat(CONFIG, [], { ...NO_WAIT, fetchImpl: f, maxRetries: 0, connectTimeoutMs: 40 })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(LlmUnavailable);
   });
 
   it('calls a 200 with the wrong shape persistent, because retrying will not make it OpenAI-compatible', async () => {
