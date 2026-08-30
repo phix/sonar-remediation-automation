@@ -127,6 +127,35 @@ else
     bad "\`/api/issues/search\` did not return an issues array: $(echo "$raw" | jq -c '.errors // .' | head -c 200)"
   fi
 
+  # --- may this token comment on a finding? (#17 step 4, the Jira write-back) ---
+  #
+  # This was recorded as answerable only by a mutating call. It is not. The
+  # earlier probe concluded "no `actions` field for this token" because
+  # `api/issues/search` OMITS `actions` unless you ask for it -- absence of the
+  # field was read as absence of the permission, which are different facts.
+  # With `additionalFields=_all` the array is returned, and it is the token's
+  # own permitted actions on that issue. Anonymous returns `[]`, correctly.
+  #
+  # The analysis token is the one that matters: SONAR_TOKEN is what the
+  # remediation workflow actually holds, so its rights are the ones that decide
+  # whether the back-link can ever be written.
+  for tok_name in SONAR_TOKEN SONAR_TOKEN_READ; do
+    tok="${!tok_name:-}"
+    [ -z "$tok" ] && { skip "action probe for \`$tok_name\` — not set"; continue; }
+    acts=$(curl -s -H "Authorization: Bearer $tok" -G "$SB/issues/search" \
+           --data-urlencode "componentKeys=${SONAR_PROJECT_KEY}" \
+           --data-urlencode "organization=${SONAR_ORG}" \
+           --data-urlencode "resolved=false" \
+           --data-urlencode "additionalFields=_all" \
+           --data-urlencode "ps=1" | jq -c '.issues[0].actions // null')
+    case "$acts" in
+      null) bad "\`$tok_name\`: no \`actions\` even with \`additionalFields=_all\` — shape changed, re-check" ;;
+      *'"comment"'*) ok "\`$tok_name\` MAY comment on findings → $acts (#17 write-back is available)" ;;
+      '[]') ok "\`$tok_name\` may do nothing to an issue → \`[]\` (#17 write-back is NOT available with this token)" ;;
+      *) ok "\`$tok_name\` actions → $acts — no \`comment\`, so the write-back degrades" ;;
+    esac
+  done
+
   # Quality gate
   qg=$(curl "${SH[@]}" -G "$SB/qualitygates/project_status" --data-urlencode "projectKey=${SONAR_PROJECT_KEY}")
   st=$(echo "$qg" | jq -r '.projectStatus.status // empty')

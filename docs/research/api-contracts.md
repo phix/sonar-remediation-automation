@@ -100,6 +100,24 @@ Observed on every sampled issue and worth carrying into `raw_reference` at minim
 
 `textRange` is the one with real downstream value: a deterministic codemod that must edit exactly one expression benefits from column offsets, which `line` alone does not give.
 
+### `actions` — the token's own rights, and the field that has to be asked for
+
+**Measured 2026-08-30.** Whether the pipeline's token may comment on a finding — #17 step 4, the Jira write-back — was recorded as answerable only by attempting the write. It is not. `api/issues/search` returns an `actions` array per issue listing what *this* credential may do to *that* issue, but **only when `additionalFields` asks for it**:
+
+```
+$ curl -s -G https://sonarcloud.io/api/issues/search \
+    --data-urlencode componentKeys=phix_sonar-sandbox-app \
+    --data-urlencode additionalFields=_all --data-urlencode ps=1 \
+  | jq -c '.issues[0].actions'
+[]
+```
+
+Without `additionalFields`, the key is absent from the response entirely. That absence was previously read as "this token has no actions", which is a different claim — the field was never requested. `transitions` behaves the same way.
+
+Anonymous returns `[]`, which is correct and is the control: it proves the field is populated from the caller's permissions rather than being decorative. A credentialled call listing `comment` is a read-only proof that the write-back will work, and one that does not list it is a read-only proof that it will not.
+
+`scripts/verify-api-contracts.sh` now probes both `SONAR_TOKEN` and `SONAR_TOKEN_READ` this way and reports each. **The analysis token is the one that decides**, because it is what the remediation workflow actually holds.
+
 ### Fingerprinting — use Sonar's `hash`, not the line number
 
 Spec §8.1 proposes fingerprinting on `repository + project + rule_key + file_path + line + message`. **Line number is the weak link**: every edit above a finding shifts it, so the same defect fingerprints differently after any unrelated change, and stale-detection produces false churn.
