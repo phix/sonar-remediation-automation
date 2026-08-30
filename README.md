@@ -47,9 +47,19 @@ whether policy *allows* it; two findings in `api/src/auth/` are both.
 
 See [the flow decision](docs/decisions/pr-remediation-flow.md).
 
-Status: **the scan half of the loop is live.** `sonar-pr-scan` is wired to PR #2 and
-is a required check on `main`, so the merge is genuinely blocked rather than
-merely reported — red on new-code coverage, with all three ratings at A
+Status: **the scan half of the loop is live; the settle half is built and unit-proven.**
+`sonar-pr-scan` is wired to PR #2 and is a required check on `main` (context `gate`),
+so the merge is genuinely blocked rather than merely reported — red on new-code
+coverage, with all three ratings at A
 ([why that is not a smell problem](docs/decisions/coverage-and-the-gate.md)).
-`remediate` and the Jira step are built and unit-proven but have not yet run in
-CI. Catalogue proven against a live Sonar scan: 32 findings, 16 groups.
+
+`remediate`, the Jira step, the settle stage and the Teams library are built and
+unit-proven; none has yet run in CI. Catalogue proven against a live Sonar scan:
+32 findings, 16 groups.
+
+The settle stage composes end to end against the live Sonar API: the PR's real
+gate classifies as red naming **new-code coverage** (not smells) plus the two
+policy refusals, auto-merge declines to fire, and a gate fetched *without* the
+`pullRequest` parameter — which Sonar answers `{"status":"NONE"}` rather than
+erroring — classifies red as undetermined rather than green
+([why](docs/decisions/scan-status-scoping.md)).
