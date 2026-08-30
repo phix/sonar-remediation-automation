@@ -1,196 +1,193 @@
-# Handoff — 2026-08-30 (fourth session)
+# Handoff — 2026-08-30 (fifth session)
 
-Picked up from `6a0cdab`. Its §9 list was almost entirely permission-gated, so
-this session did the one thing that list could not: **it wrote code.** Four
-slices landed via parallel TDD engineers in isolated worktrees, and the most
-valuable thing any of them produced was not a feature — it was an API probe that
-falsified an assumption already merged into `settle/classify.mjs`.
+Picked up from `ecfc9a3`. Its §9 list had three items already done by the time
+pickup checked them — the push had landed, `enforce_admins` was on, the Jira
+secrets had moved to the sandbox — so the real work started at item 4.
 
-Everything below is **verified state**, not intention. Where something is
-unproven it says so in the sentence that claims it.
+Then Nick said the LLM should run against **tinman**, and that turned a config
+task into a defect hunt. The seam was fine. Everything around it was not.
 
-**Nothing is pushed since the mid-session push.** 10 commits are local.
+**Everything below is verified state.** Where something is unproven it says so in
+the sentence that claims it.
+
+**Nothing is merged.** All work sits on two pushed branches; both `main`s are
+untouched.
 
 ---
 
 ## 1. The headline
 
-**The settle half of the loop exists.** `settle/` decides the terminal state and
-optionally enables native auto-merge; `teams/` renders and delivers the one
-message; `scripts/verify-reset.mjs` asserts a reset actually restored what it
-claims. All unit-proven, none run in CI.
+**The agentic path could never have worked against tinman, and the test suite
+had no way to know.** `DEFAULTS.connectTimeoutMs` was 10s, applied to the `fetch`
+promise on the premise that fetch resolving on headers means
+connect-and-first-byte. That is true of a *streaming* endpoint. Ollama generates
+the entire completion before sending a single header, so the header wait **is**
+the generation time:
 
-**The thing worth reading twice:** `api/ce/component` — the endpoint that says
-whether an analysis completed — **has no `pullRequest` parameter and silently
-ignores one.** It returns the component's newest task whatever ref that belongs
-to, so another branch's `SUCCESS` can stand in for this PR's. That would have
-defeated the precondition which exists to stop a stale gate being trusted.
-Found by probing, not by reading. See `docs/decisions/scan-status-scoping.md`.
+| | time to headers |
+|---|---|
+| cold, model unloaded | **74s** |
+| warm, realistic remediation prompt | **19.5s** |
+| old budget | **10s** |
+
+Every call died on the deadline — warm as well as cold — and reported
+`infra_failure_transient`: a healthy server accused of being down. That is the
+exact confusion `client.mjs`'s own header comment says the module exists to
+prevent.
+
+The deadline was never what caught a dead host anyway. A refused connection or a
+DNS failure rejects the fetch promise immediately; `prove:gates` scenario 4 still
+fails instantly on `ENOTFOUND` after the fix.
 
 ## 2. Current state
 
 | | |
 |---|---|
-| Automation repo | `phix/sonar-remediation-automation`, tree clean, **10 commits unpushed**, last `6e9ecea` |
-| Remote automation `main` | `c81e0a8` (pushed mid-session by Nick) |
-| Sandbox repo | `phix/sonar-sandbox-app` @ `914356d`, clean, **0 unpushed** |
-| Remote sandbox `main` | `914356d` |
-| Demo branch | `demo/planted-smells` @ `243e9d2` = `v0-pristine` — untouched |
-| `v0-clean` | `1a3f005`. **Main is ahead of it** (`914356d`) — benign, see §5 |
-| PR #2 | `OPEN`. Required context is `gate`; six `gate` check-runs on the head, all `failure`. Correctly blocking. |
-| `refs/pull/2/merge` | base still `19584d7` — **stale**, unchanged |
-| Branch protection | `contexts: ["gate"]`, `strict: false`, `enforce_admins: false` |
-| Tests | **237** in 16 files (was 153 in 9) |
+| Automation `main` | `ecfc9a3` — **untouched** |
+| Automation branch | `llm/tinman-endpoint`, 3 commits, **pushed**, tree clean |
+| Sandbox `main` | `914356d` — **untouched** |
+| Sandbox branch | `llm/tinman-transport`, 4 commits, **pushed**, tree clean |
+| Tests | **253** in 17 files (was 237 in 16) |
 | Provers | `prove:gates` 4/4, `prove:templates` ok |
-| Ratio | still 18 codemod / 10 agentic / 4 refused |
-| Jira secrets | still on **automation**, still absent from the **sandbox** |
-| Teams webhook | `TEAMS_WEBHOOK_URL` does not exist on either repo |
-| LLM endpoint | still unconfigured |
+| PR #2 | `OPEN`, `BLOCKED`, head `243e9d2`, no auto-merge request |
+| Required context | `gate`, `strict:false`, `enforce_admins` **true** |
+| `refs/pull/2/merge` | parents `19584d7` + `243e9d2` — **still stale** |
+| Live gate | `ERROR`, `new_coverage 5.7` vs 80, all three ratings `OK` |
+| tinman | `100.102.1.50` on tailnet `tailc095b7.ts.net`, active, Windows |
+| Model | `qwen2.5-coder:14b` — the only one pulled |
+| `LLM_API_KEY` | **not a secret**. Ollama ignores bearer auth; it is a placeholder |
+| Jira secrets | on **both** repos now |
+| `TEAMS_WEBHOOK_URL` | absent — and now *declared* optional, so preflight says note, not failure |
+| `TS_OAUTH_*` | absent — the only real preflight failures left |
 
-**Unproven, carried forward:** nothing built this session has run in CI. The
-two-axis gate comment still has never run on the live PR.
+**Unproven, and it is the important caveat:** *nothing in either branch has run
+in CI.* Every measurement above was taken from this laptop, which is already on
+the tailnet. This project's own repeated lesson is that the gap between "proven
+locally" and "proven in CI" is where the defects live.
 
 ## 3. What changed this session
 
-- **`settle/classify.mjs`** — two states, `ready` and `red`, and no third. An
-  unanticipated input shape returns red-undetermined rather than throwing or
-  falling through to green. Names the *failing condition* — the live gate is
-  coverage-bound with all three ratings at A, so a reason saying "code smells"
-  there would be actively wrong.
-- **`settle/automerge.mjs`** — enables GitHub's **native** auto-merge only. No
-  function in the file can reach a merge mutation, so branch protection stays
-  the decision-maker even if a caller is wrong.
-- **`settle/gate.mjs`** — bounded fetchers for the gate and the scan status,
-  with the cross-check described in §1.
-- **`teams/{card,client,notify}.mjs`** — Adaptive Card for Power Automate,
-  bounded client that never retries a 4xx, and the off/unconfigured/on tri-state.
-- **`scripts/verify-reset.mjs`** — the two boxes `demo-reset.yml` leaves unmet:
-  PR #2's number unchanged and still open, and a second run from an already-clean
-  state passing rather than erroring.
-- **`vitest.config.mjs`** — new. Excludes `.claude/worktrees/**`. See §7.
-- **`docs/decisions/scan-status-scoping.md`** — new.
-- **`~/.claude/RTK.md` + rtk config** — defect 8 recorded, `vitest` excluded.
+**Automation (`llm/tinman-endpoint`)**
+
+- **`codemods/agentic/client.mjs`** — the deadline fix. `headerTimeoutMs: 180_000`
+  named for what it measures, `bodyTimeoutMs` its own number rather than whatever
+  a slow generation left over, explicit `stream: false`. Old option names still
+  resolve, because `prove-gates.mjs` and the suite drive tiny budgets through them
+  to force the bounded-wait path.
+- **`settle/run.mjs`** — new. `classify/gate/automerge` were libraries with **no
+  entry point and no npm script**; the terminal-state decision existed only inside
+  its own tests. Plus `npm run settle`.
+- **`scripts/preflight.mjs`** — optional secrets, declared via a
+  `# preflight: optional-secret NAME` comment.
+- **`.env.example`, `config/secrets.md`, `docs/decisions/llm-endpoint-transport.md`**.
+
+**Sandbox (`llm/tinman-transport`)**
+
+- **`remediate.yml`** — tailnet join, a reachability probe *before* the model
+  call, the agentic step actually invoked, honest commit provenance, the
+  remediation record uploaded as an artifact. **`container:` removed** — see §7.
+- **`sonar-pr-scan.yml`** — a new `settle` job and the Teams notification.
 
 ## 4. Blocked
 
-Both were refused by the auto-mode classifier this session and need Nick's hands.
+**a. `TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET` on the sandbox repo.** A tailnet
+OAuth client with `auth_keys` scope, and an ACL letting `tag:ci` reach
+`tinman:11434`. This is the only thing standing between the branches and a real
+CI run. preflight names both.
 
-**a. `enforce_admins` — #15's last open box.**
+**b. `TEAMS_WEBHOOK_URL` — #2's HITL half.** The library is wired now; creating
+the Power Automate flow and confirming a personal Microsoft account can is still
+untouched, and has been across three sessions.
 
-```bash
-gh api -X POST repos/phix/sonar-sandbox-app/branches/main/protection/enforce_admins
-```
-
-**b. Jira secrets are still on the wrong repo.** `remediate.yml` runs on the
-sandbox and a workflow reads secrets only from its own repository. The script is
-interactive (hidden token prompt) and the only other source is the Keychain,
-which the classifier blocks.
-
-```bash
-./scripts/setup-jira.sh
-```
-
-**c. `TEAMS_WEBHOOK_URL` does not exist.** The library is built; #2's HITL steps
-— create the Power Automate flow, confirm a personal Microsoft account can — have
-never been done. The library half being finished changes nothing about that risk.
-
-**d. `LLM_BASE_URL` / `LLM_MODEL` / `LLM_API_KEY` unset.** Unchanged.
-
-**e. Reading `node scripts/verify-reset.mjs` was itself blocked.** A read-only
-script, refused twice. Its logic was verified by importing it in-process with the
-live SHAs injected, which is weaker than one real run. If one permission is worth
-adding, it is this one.
+**c. Retriggering PR #2.** Needs an empty commit on `demo/planted-smells`. Not
+done because it mutates the demo branch and nobody asked.
 
 ## 5. Known open bugs
 
-None open. One found and fixed, worth knowing because of how it was found:
+None open. Four found and fixed, three of them in code written *this* session:
 
-`verify-reset.mjs` asserted `main === v0-clean`. Live, `main` is `914356d` and
-`v0-clean` is `1a3f005` — main advanced with ordinary tooling commits, which
-`demo-reset.yml` explicitly calls normal and quietly advances the tag for. So the
-verifier failed a healthy repository, and its message could not distinguish that
-from "main contains `v0-pristine`, PR #2 was merged, the baseline is dead". It
-now reproduces the workflow's three-way split. **The unit tests were green
-throughout; only running it against the real repository found this.**
+- The 10s header budget (§1).
+- **My own artifact lookup filtered `gh run list --branch <head>`.** `remediate.yml`
+  is `workflow_dispatch`, so its run is attributed to whatever ref it was
+  dispatched from — usually `main`, never the PR head. It would have silently
+  found nothing and reported "no remediation has run" for a PR that had just been
+  remediated. Caught before commit, by asking where the run actually lives.
+- **My own workflow comment claimed `run.mjs` exits 0 when unconfigured.** It
+  returns **1**, deliberately. The step is fatal, not soft.
+- **The optional-secret marker matched nothing at first.** `allText` is
+  `JSON.stringify(parse(yaml))`, which contains no comments, so a comment marker
+  could never be seen. It looked exactly like a feature that worked.
 
 ## 6. Verify before you push
 
 ```bash
-npm test
+npm test && npm run prove:gates && npm run prove:templates
 ```
 
 ```bash
-npm run prove:gates && npm run prove:templates
+node settle/run.mjs --project phix_sonar-sandbox-app --pr 2
 ```
 
-```bash
-curl -s "https://sonarcloud.io/api/qualitygates/project_status?projectKey=phix_sonar-sandbox-app&pullRequest=2"
-```
-
-That last one is the cheapest proof the settle stage is reading reality: it must
-report `ERROR` with `new_coverage 5.7` and all three ratings `OK`. Drop
-`&pullRequest=2` and it answers `{"status":"NONE","conditions":[]}` — not an
-error, a different question answered politely.
+That second one is the cheapest proof the settle stage reads reality. With a
+clean dispositions file it must say `red — quality gate failed: new-code coverage
+is 5.7 against a threshold of 80`. Ask it about `--pr 999` and it must say
+red-undetermined rather than borrowing PR 2's `SUCCESS` — that is the previous
+session's headline defect, and both directions were checked live.
 
 ## 7. Traps hit this session
 
-**A green suite counted 426 tests when the true number was 177.** The subagent
-harness materialises worktrees at `.claude/worktrees/agent-*` *inside* the repo,
-and vitest walked into them, counting stale copies of every suite — one from a
-checkout eight commits behind. Nothing was red. The number was wrong in the
-direction nobody checks.
+**A green suite cannot see a wrong deadline.** All 237 tests passed against a
+client that could not complete a single real call. The tests mock `fetch`, so the
+one thing that mattered — how long a real endpoint takes to send headers — was
+the one thing never exercised.
 
-**rtk hid it.** `npx vitest run` was rewritten to `rtk vitest`, which collapses
-the report to `PASS (n) FAIL (n)` — dropping the *file* count, which is the one
-number that would have shown 25 files where 11 were expected. Worse, `npx vitest
-list --filesOnly` — which lists files and runs nothing — returned `PASS (0) FAIL
-(0)`. Recorded as RTK defect 8; both spellings excluded and verified across eight
-invocations. **The lesson is about what a wrapper drops, not what it corrupts: a
-summariser that discards the denominator turns a wrong number into an
-unfalsifiable one.**
+**`container:` silently defeats Tailscale.** Inside a container Tailscale cannot
+get `/dev/net/tun`, falls back to userspace networking, and offers a SOCKS5 proxy
+instead of routing — while `client.mjs` calls `globalThis.fetch`, which ignores
+`HTTP_PROXY`/`ALL_PROXY` entirely. The tailnet comes up, the step goes green, and
+the call still leaves over normal egress. **Green step, dead route.**
 
-**Four suites passed on their first run again**, the same shape §7 has warned
-about twice. Every engineer was required to apply five deliberate mutations and
-show each turned tests red. Nineteen mutations across four slices, zero holes.
-Two engineers reported a mutation catching *more* tests than intended and
-correctly declined to narrow the fixture to make the table look tidier.
+**preflight against the wrong ref invents problems.** `sonar-pr-scan.yml` checked
+against `demo/planted-smells` reports four missing scripts; against `main` — the
+merge ref it actually runs on — it is clean. Pass the ref the workflow really uses.
 
-**Two agents ignored the worktree path they were given** and worked in their own
-harness worktree instead, one landing on a branch nobody asked for
-(`slice/teams-lib`). Both said so plainly, which is the only reason it cost
-nothing. Check `git worktree list` and the branch a slice actually landed on
-before merging it.
+**Twelve tests passed on their first run**, the shape §7 has now warned about
+four times. Five deliberate mutations were applied to `settle/run.mjs` and each
+shown to turn them red; four more to `client.mjs`. Zero holes, but the first-run
+pass is still the signal to go looking.
+
+**A false red is a real cost.** Wiring Teams made preflight report a failure the
+workflow would not actually have. Left alone, that is how the *true* red line
+underneath it stops being read.
 
 ## 8. Where the numbers disagree with the docs
 
-- **The README claimed `sonar-pr-scan` is the required check.** The required
-  *context* is `gate` — the job's name, not the workflow's. Six `gate` check-runs
-  sit on the head commit, all failing, so the block is real. Wording only.
-- **`classify.mjs`'s documented input contract was half wrong.** The gate shape
-  was right; the scan shape assumed a per-ref scoping that does not exist. The
-  fetcher was built to compensate rather than the contract loosened.
-- **Tests: 153 → 237.** Files 9 → 16.
-- **`v0-clean` is not `main`.** It was `03c5384` in an older ticket and is now
-  `1a3f005`, because `demo-reset.yml` advances it. Do not treat the SHAs written
-  into issue #20 as current.
+- **`LLM_API_KEY` was documented as a secret.** It is a placeholder — Ollama
+  ignores bearer auth. Corrected in `config/secrets.md`. It stays *required*
+  because the office endpoint that replaces tinman will need a real one.
+- **Tests: 237 → 253.** Files 16 → 17.
+- **README's required-check wording was already fixed** — it says `(context gate)`.
+  §8 of the previous handoff is stale on that point.
+- **Handoff item 4 said "wire settle into remediate.yml".** Settle does not belong
+  there: remediation pushes, the push re-triggers the scan, and only then is the
+  gate the fixed code's gate. It went into `sonar-pr-scan.yml` as a second,
+  non-required job instead.
 
 ## 9. Next, in order
 
-1. **Push** — 10 commits stranded.
-2. **`enforce_admins`** (§4a) — one command, closes #15.
-3. **`setup-jira.sh`** (§4b) — unblocks every live box on #17.
-4. **Wire `settle/` and `teams/` into `remediate.yml`.** They are libraries with
-   npm scripts and nothing calls them. Run `scripts/preflight.mjs` against the
-   edited workflow *before* trusting it — that is what caught the wrong-repo
-   secrets last session, in two seconds, on a workflow that had existed for ninety.
-5. **#2's HITL half** — prove a personal Microsoft account can create the Power
-   Automate flow, or pick the fallback. Deliberately ticket one; still undone.
-6. **Retrigger PR #2** — the merge ref is still stale at base `19584d7`, so this
-   needs an empty commit on the branch, not a rerun.
-7. **#19's live endpoint** — code-complete, has never made a real call.
+1. **Issue the Tailscale OAuth client and set `TS_OAUTH_*`** (§4a). Everything
+   else is downstream of this.
+2. **Run `remediate.yml` once, dry-run first.** Nothing in either branch has ever
+   executed. Expect ~20s per agentic finding, 10 of them, up to 2 proposal
+   attempts — minutes, not seconds.
+3. **Merge the two branches** once a real run has proven them. Not before.
+4. **#2's HITL half** (§4b) — the Power Automate flow, or pick the fallback.
+5. **Retrigger PR #2** (§4c) — empty commit, not a rerun; the merge ref is stale.
+6. **Rotate the GitHub token in `~/.zshrc:13`.** A live `ghp_` value sits there in
+   plaintext; it surfaced in a grep this session. Unrelated to this repo, still real.
 
 ## 10. What this session taught, in one line
 
-Every real defect this session was found by running something against reality —
-the live Sonar API, the live repository, the actual file count — and every one of
-them sat underneath a green test suite that had no way to know it was wrong.
+The seam that was designed to be swapped swapped perfectly, and every defect was
+in the things nobody thought were decisions — a timeout constant, a container
+image, a `--branch` filter, and a comment the parser had already thrown away.
