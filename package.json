@@ -11,7 +11,10 @@
     "test": "vitest run",
     "codemods:apply": "node codemods/apply.mjs",
     "preflight": "node scripts/preflight.mjs",
-    "branch-contract": "node scripts/branch-contract.mjs"
+    "branch-contract": "node scripts/branch-contract.mjs",
+    "agentic": "node codemods/agentic/run.mjs",
+    "prove:gates": "node codemods/agentic/prove-gates.mjs",
+    "prove:templates": "node codemods/prove-templates.mjs"
   },
   "dependencies": {
     "jscodeshift": "^17.3.0",
