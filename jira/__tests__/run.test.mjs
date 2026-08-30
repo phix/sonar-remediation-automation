@@ -204,6 +204,19 @@ describe('turning Jira on mid-flight, after remediation already ran', () => {
     expect(bodies).toMatch(/No deterministic fixer exists/);
   });
 
+  it('calls a finding cleared as a side effect resolved, as apply.mjs does', async () => {
+    const { calls, options } = world();
+    // summarize() in apply.mjs is explicit that resolved = fixed + alreadyGone.
+    // A group where EVERY finding went that way must not produce a ticket that
+    // is silent about the fix.
+    const run = await runJira([FINDINGS[2]], {
+      enabled: true, config: CONFIGURED, options,
+      remediation: { refused: [], needsAgent: [], results: [{ ...FINDINGS[2], changed: false, alreadyGone: true }] }
+    });
+    expect(run.created).toBe(1);
+    expect(calls.create[0].fields.description).toMatch(/Fixed automatically by a deterministic codemod/);
+  });
+
   it('maps a finding to its disposition by rule, file and line together', () => {
     const m = dispositionsFrom({
       refused: [FINDINGS[0]], needsAgent: [FINDINGS[1]], results: []

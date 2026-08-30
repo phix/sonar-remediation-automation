@@ -52,10 +52,12 @@ export function dispositionsFrom(remediation) {
     m.set(idOf(f), { refusedByPolicy: true, reason: f.policyReason || '' });
   }
   for (const f of remediation.needsAgent || []) m.set(idOf(f), { awaitingAgent: true });
+  // `alreadyGone` counts as resolved, because apply.mjs defines it that way:
+  // a finding cleared as a side effect of a co-located fix is fixed. Disagreeing
+  // with that here would leave a group whose findings were ALL cleared that way
+  // with no disposition at all — a ticket silent about work that is already done.
   for (const r of remediation.results || []) {
-    if (r.changed || r.status === 'resolved') {
-      m.set(idOf(r.finding || r), { resolvedDeterministically: true });
-    }
+    if (r.changed || r.alreadyGone) m.set(idOf(r), { resolvedDeterministically: true });
   }
   return m;
 }
