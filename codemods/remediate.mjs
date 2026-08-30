@@ -18,6 +18,9 @@ import { pathToFileURL } from 'node:url';
 import { partition, DEFAULT_POLICY } from './policy.mjs';
 import { applyAll, summarize } from './apply.mjs';
 import { fixerFor } from './registry.mjs';
+import { renderTestsForFile, testPathFor } from './testgen.mjs';
+import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
 
 export function remediate(findings, { root = '.', dryRun = false, policy = DEFAULT_POLICY } = {}) {
   const { eligible, refused } = partition(findings, policy);
@@ -27,13 +30,24 @@ export function remediate(findings, { root = '.', dryRun = false, policy = DEFAU
   const needsAgent = eligible.filter((f) => !fixerFor(f.rule));
   const codemoddable = eligible.filter((f) => fixerFor(f.rule));
 
+  // Capture each file BEFORE any edit: the generated tests characterize the
+  // behaviour being preserved, so they must be derived from the original.
+  const originals = new Map();
+  if (!dryRun) {
+    for (const f of new Set(codemoddable.map((c) => c.file))) {
+      try { originals.set(f, readFileSync(join(root, f), 'utf8')); } catch { /* reported below */ }
+    }
+  }
+
   const results = codemoddable.length ? applyAll(codemoddable, { root, dryRun }) : [];
   const stats = summarize(results);
+  const tests = dryRun ? [] : writeTests(results, originals, root);
 
   return {
     refused,
     needsAgent,
     results,
+    tests,
     stats,
     ratio: {
       total: findings.length,
@@ -44,6 +58,41 @@ export function remediate(findings, { root = '.', dryRun = false, policy = DEFAU
       failed: stats.failed || 0
     }
   };
+}
+
+/**
+ * Exactly one test case per applied fix, grouped into one file per module.
+ *
+ * The count is checked by the caller, not asserted here, because a shortfall is
+ * information rather than a crash: a module that exports nothing has nothing to
+ * characterize, and saying so is better than emitting a test that asserts {}.
+ */
+export function writeTests(results, originals, root, write = writeFileSync) {
+  const byFile = new Map();
+  for (const r of results.filter((x) => x.changed)) {
+    if (!byFile.has(r.file)) byFile.set(r.file, []);
+    byFile.get(r.file).push(r);
+  }
+
+  const written = [];
+  for (const [file, fixes] of byFile) {
+    const target = testPathFor(file);
+    const original = originals.get(file);
+    if (!target || !original) {
+      written.push({ file, path: null, cases: 0, skipped: `no test location for ${file}` });
+      continue;
+    }
+    const source = renderTestsForFile(original, file, fixes, target.importPath);
+    if (!source) {
+      written.push({ file, path: null, cases: 0, skipped: `${file} exports nothing to characterize` });
+      continue;
+    }
+    const abs = join(root, target.path);
+    mkdirSync(abs.split('/').slice(0, -1).join('/'), { recursive: true });
+    write(abs, source);
+    written.push({ file, path: target.path, cases: fixes.length });
+  }
+  return written;
 }
 
 /** One commit per rule group — `module|rule` matches the plan's grouping. */
@@ -130,6 +179,15 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   console.log('\ncommit plan:');
   for (const c of commitPlan(run.results)) console.log(`  ${c.message}  [${c.files.join(', ')}]`);
+
+  const cases = run.tests.reduce((n, t) => n + t.cases, 0);
+  console.log(`\ngenerated ${cases} test case(s) across ${run.tests.filter((t) => t.path).length} file(s)`);
+  for (const t of run.tests) {
+    console.log(t.path ? `  ${t.path}  (${t.cases} case${t.cases === 1 ? '' : 's'})` : `  SKIPPED ${t.skipped}`);
+  }
+  if (cases !== run.stats.fixed) {
+    console.log(`  NOTE: ${run.stats.fixed} edits but ${cases} test cases — the one-to-one rule is not met`);
+  }
 
   console.log('\nratio:', JSON.stringify(run.ratio));
   if (jsonIdx >= 0) writeFileSync(args[jsonIdx + 1], JSON.stringify(run.ratio, null, 2));

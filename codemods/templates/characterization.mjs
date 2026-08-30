@@ -93,3 +93,59 @@ export async function describeSurface(importPath) {
     return { name, kind, arity: kind === 'function' ? v.length : 0 };
   });
 }
+
+/**
+ * Read a module's exported surface from its SOURCE, without importing it.
+ *
+ * describeSurface() has to execute the module, which works for plain ESM and
+ * does not work for an Angular component — decorators need the compiler, and
+ * the compiler needs a build, and the build is downstream of the fix we are
+ * generating a test for. Parsing sidesteps the circle, and gives the same two
+ * facts the template actually asserts: the exported names and their arity.
+ */
+export function staticSurface(j, root) {
+  const surface = [];
+  const add = (name, node) => {
+    if (!name || surface.some((s) => s.name === name)) return;
+    const isFn = node && (node.type === 'FunctionDeclaration'
+      || node.type === 'ArrowFunctionExpression' || node.type === 'FunctionExpression');
+    surface.push({
+      name,
+      kind: isFn ? 'function' : node && node.type === 'ClassDeclaration' ? 'class' : 'value',
+      // Default and rest parameters do not count towards Function.length, and
+      // the assertion has to match what the runtime will actually report.
+      arity: isFn ? node.params.filter((p) =>
+        p.type !== 'RestElement' && p.type !== 'AssignmentPattern').length : 0
+    });
+  };
+
+  // TypeScript types are erased. `export interface Foo` produces no runtime
+  // export, so asserting it would fail against correct code — a generated test
+  // that fails for its own reasons is worse than no test at all.
+  const TYPE_ONLY = new Set([
+    'TSInterfaceDeclaration', 'TSTypeAliasDeclaration', 'TSModuleDeclaration',
+    'TSDeclareFunction', 'TSEnumDeclaration'
+  ]);
+
+  root.find(j.ExportNamedDeclaration).forEach((p) => {
+    if (p.node.exportKind === 'type') return;
+    const d = p.node.declaration;
+    if (d && TYPE_ONLY.has(d.type)) return;
+    if (d && d.declare) return;
+    if (!d) {
+      (p.node.specifiers || [])
+        .filter((s) => s.exportKind !== 'type')
+        .forEach((s) => add(s.exported && s.exported.name, null));
+      return;
+    }
+    if (d.type === 'VariableDeclaration') {
+      d.declarations.forEach((dec) => {
+        if (dec.id.type === 'Identifier') add(dec.id.name, dec.init);
+      });
+    } else if (d.id) {
+      add(d.id.name, d);
+    }
+  });
+
+  return surface.sort((a, b) => a.name.localeCompare(b.name));
+}
