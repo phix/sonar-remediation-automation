@@ -12,6 +12,7 @@
  *
  * Usage:
  *   node codemods/remediate.mjs <findings.json> --root DIR [--dry-run] [--json out.json]
+ *                              [--dispositions disp.json]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -159,12 +160,33 @@ export function renderReport(run) {
   return l.join('\n');
 }
 
+/**
+ * What the ticketing step needs to know, and nothing else.
+ *
+ * `run` cannot be serialised as it stands: every entry in `results` carries the
+ * post-edit `source` of its whole file, so a JSON dump of a 32-finding run is
+ * every source file in the repository, twice. This is the same shape
+ * `jira/run.mjs` already consumes -- deliberately the same, so there is one
+ * reader and not two -- with the bulk removed.
+ */
+export function dispositionSummary(run) {
+  const id = (f) => ({ rule: f.rule, file: f.file, line: f.line });
+  return {
+    refused: run.refused.map((f) => ({ ...id(f), policyReason: f.policyReason })),
+    needsAgent: run.needsAgent.map(id),
+    results: run.results.map((r) => ({
+      ...id(r), changed: Boolean(r.changed), alreadyGone: Boolean(r.alreadyGone)
+    }))
+  };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
   const findingsFile = args.find((a) => !a.startsWith('--'));
   const rootIdx = args.indexOf('--root');
   const root = rootIdx >= 0 ? args[rootIdx + 1] : '.';
   const jsonIdx = args.indexOf('--json');
+  const dispIdx = args.indexOf('--dispositions');
   if (!findingsFile) { console.error('usage: remediate.mjs <findings.json> --root DIR'); process.exit(2); }
 
   const findings = JSON.parse(readFileSync(findingsFile, 'utf8'));
@@ -191,6 +213,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   console.log('\nratio:', JSON.stringify(run.ratio));
   if (jsonIdx >= 0) writeFileSync(args[jsonIdx + 1], JSON.stringify(run.ratio, null, 2));
+  if (dispIdx >= 0) writeFileSync(args[dispIdx + 1], JSON.stringify(dispositionSummary(run), null, 1));
   writeFileSync('remediation-comment.md', renderReport(run));
   process.exit(run.stats.failed > 0 ? 1 : 0);
 }

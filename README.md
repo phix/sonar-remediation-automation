@@ -47,4 +47,9 @@ whether policy *allows* it; two findings in `api/src/auth/` are both.
 
 See [the flow decision](docs/decisions/pr-remediation-flow.md).
 
-Status: **sandbox built; catalogue proven against a live Sonar scan (32 findings, 16 groups). The PR flow is being built — no workflow is wired to PR #2 yet.**
+Status: **the scan half of the loop is live.** `sonar-pr-scan` is wired to PR #2 and
+is a required check on `main`, so the merge is genuinely blocked rather than
+merely reported — red on new-code coverage, with all three ratings at A
+([why that is not a smell problem](docs/decisions/coverage-and-the-gate.md)).
+`remediate` and the Jira step are built and unit-proven but have not yet run in
+CI. Catalogue proven against a live Sonar scan: 32 findings, 16 groups.

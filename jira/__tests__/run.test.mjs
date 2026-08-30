@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { runJira, renderJiraReport, dispositionsFrom } from '../run.mjs';
 import { readPlan, planIndex, recordIssueKey, writePlan } from '../plan.mjs';
 import { groupFindings } from '../group.mjs';
+import { dispositionSummary } from '../../codemods/remediate.mjs';
 
 const CONFIGURED = {
   baseUrl: 'https://x.atlassian.net', projectKey: 'SONAR',
@@ -280,5 +281,38 @@ describe('the plan file itself', () => {
     recordIssueKey(plan, g, 'SONAR-5');
     expect(plan.items).toHaveLength(1);
     expect(plan.items[0]).toMatchObject({ jira_issue_key: 'SONAR-5', status: 'Ticketed' });
+  });
+});
+
+describe('the bridge from remediate.mjs to here', () => {
+  it('carries every disposition without carrying the file contents', () => {
+    // Each entry of run.results holds the post-edit `source` of its whole file.
+    // Serialising the run as-is would write every source file in the repo into
+    // the JSON the ticketing step reads, twice over.
+    const run = {
+      refused: [{ ...FINDINGS[0], policyReason: 'protected path', source: 'ENTIRE FILE' }],
+      needsAgent: [{ ...FINDINGS[1], source: 'ENTIRE FILE' }],
+      results: [{ ...FINDINGS[2], changed: true, source: 'ENTIRE FILE' }]
+    };
+    const out = dispositionSummary(run);
+    expect(JSON.stringify(out)).not.toMatch(/ENTIRE FILE/);
+    expect(out.refused[0].policyReason).toBe('protected path');
+  });
+
+  it('is the SAME shape dispositionsFrom reads, so there is one reader and not two', () => {
+    const run = {
+      refused: [{ ...FINDINGS[0], policyReason: 'protected path' }],
+      needsAgent: [FINDINGS[1]],
+      results: [{ ...FINDINGS[2], changed: false, alreadyGone: true }]
+    };
+    const m = dispositionsFrom(dispositionSummary(run));
+    expect(m.get('javascript:S3776|api/src/a.js|3')).toMatchObject({ refusedByPolicy: true });
+    expect(m.get('javascript:S3776|api/src/b.js|9')).toMatchObject({ awaitingAgent: true });
+    expect(m.get('typescript:S3358|web/src/c.ts|4')).toMatchObject({ resolvedDeterministically: true });
+  });
+
+  it('normalises the booleans, so a missing flag never reads as truthy', () => {
+    const out = dispositionSummary({ refused: [], needsAgent: [], results: [{ ...FINDINGS[0] }] });
+    expect(out.results[0]).toMatchObject({ changed: false, alreadyGone: false });
   });
 });

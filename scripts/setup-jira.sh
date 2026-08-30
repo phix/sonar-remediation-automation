@@ -8,7 +8,12 @@
 # in shell history, never written to a file in this repo.
 set -uo pipefail
 
-REPO=phix/sonar-remediation-automation
+# The SANDBOX, not the automation repo. `remediate.yml` is the only workflow
+# anywhere that reads JIRA_*, and it runs here -- a workflow can read secrets
+# only from the repository it runs in, so secrets pushed to the automation repo
+# are invisible to it. They were going to the wrong repo until preflight.mjs
+# reported both as MISSING on the repo that actually needs them, 2026-08-30.
+REPO=phix/sonar-sandbox-app
 BASE=https://1337software.atlassian.net
 PROJ=SONAR
 SERVICE=sonar-remediation
@@ -67,7 +72,7 @@ echo "3. Storing in the macOS Keychain..."
 security add-generic-password -U -s "$SERVICE" -a jira-user-email -w "$EMAIL" && echo "   OK -- jira-user-email"
 security add-generic-password -U -s "$SERVICE" -a jira-api-token  -w "$TOKEN" && echo "   OK -- jira-api-token"
 
-echo "4. Pushing to GitHub Actions secrets on $REPO..."
+echo "4. Pushing to GitHub Actions secrets on $REPO (where remediate.yml runs)..."
 printf '%s' "$EMAIL" | gh secret set JIRA_USER_EMAIL --repo "$REPO" && echo "   OK -- JIRA_USER_EMAIL"
 printf '%s' "$TOKEN" | gh secret set JIRA_API_TOKEN  --repo "$REPO" && echo "   OK -- JIRA_API_TOKEN"
 

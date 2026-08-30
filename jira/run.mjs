@@ -22,7 +22,8 @@
  *
  * Usage:
  *   node jira/run.mjs <findings.json> [--enabled] [--plan plan.json]
- *                     [--pr N] [--pr-url URL] [--dry-run] [--json out.json]
+ *                     [--pr N] [--pr-url URL] [--dispositions disp.json]
+ *                     [--dry-run] [--json out.json]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -202,19 +203,27 @@ export async function main(argv) {
   const findingsPath = args.find((a) => !a.startsWith('--'));
   if (!findingsPath) {
     console.error('usage: jira/run.mjs <findings.json> [--enabled] [--plan plan.json] '
-      + '[--pr N] [--pr-url URL] [--dry-run] [--json out.json]');
+      + '[--pr N] [--pr-url URL] [--dispositions disp.json] [--dry-run] [--json out.json]');
     return 2;
   }
   const flag = (name) => args.includes(`--${name}`);
   const val = (name) => { const i = args.indexOf(`--${name}`); return i >= 0 ? args[i + 1] : undefined; };
 
   const findings = JSON.parse(readFileSync(findingsPath, 'utf8'));
+
+  // What remediate.mjs already decided about each finding. Absent is fine and
+  // means "nothing ran before this" — the tickets then simply carry no
+  // disposition, rather than the step refusing to file them.
+  const dispPath = val('dispositions');
+  const remediation = dispPath ? JSON.parse(readFileSync(dispPath, 'utf8')) : null;
+
   let run;
   try {
     run = await runJira(findings, {
       enabled: flag('enabled'),
       planPath: val('plan') || null,
       dryRun: flag('dry-run'),
+      remediation,
       sonar: {
         org: process.env.SONAR_ORG,
         projectKey: process.env.SONAR_PROJECT_KEY,
