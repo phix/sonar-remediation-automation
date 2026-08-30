@@ -126,7 +126,9 @@ Concretely, none of these may be an agentic call:
 | Jira body, labels, dedupe | String assembly from known fields. |
 | Auto-merge decision | The quality gate already decided; this just acts on it. |
 
-On the sandbox catalogue this means **19 of 32 findings are fixed with zero LLM involvement**, and 11 reach Claude — the `S3776`, `S4144`, `S3358` and `S7737` groups, where a mechanical rewrite genuinely does not exist. The 2 refused findings never reach either engine.
+On the sandbox catalogue this means **18 of 32 findings are fixed with zero LLM involvement**, and 10 reach Claude — the `S3776`, `S4144` and `S3358` groups, where a mechanical rewrite genuinely does not exist. The 4 findings refused by policy never reach either engine.
+
+**Measured 2026-08-30, and it corrected the estimate.** The catalogue's `role` field says 19/11/2; enforcing the eligibility policy gives 18/10/4. The two findings that move are `javascript:S7765` and `javascript:S7737`, both in `api/src/auth/session.js` — the directory this document's own `S1121` example names as the protected path. `role` answers *which engine could fix this*; only the policy answers *are we allowed to*, and a finding can be codemod-fixable and refused. Where the two disagree, **the policy wins**, because the alternative is a pipeline that edits security-sensitive code whenever a fixer happens to exist for the rule.
 
 The measurable consequence: **the codemod library is now the core deliverable of this project**, not a cost saving on the side. A rule with no codemod is a rule that costs money and latency on every PR that trips it. That reframing is why it gets [its own ticket](https://github.com/phix/sonar-remediation-automation/issues/18).
 

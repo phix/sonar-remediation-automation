@@ -38,8 +38,11 @@ the switches-on configuration; the defaults are safe, not complete.
 
 **An agentic call is permitted at exactly one point in the system** — fixing a
 finding whose rule has no deterministic codemod. Everything else is code. On the
-sandbox catalogue that is 19 findings fixed with zero LLM involvement, 11
-reaching Claude, and 2 refused by policy.
+sandbox catalogue, with the eligibility policy actually enforced, that is
+**18 findings fixed with zero LLM involvement, 10 reaching Claude, and 4 refused
+by policy** — measured, not estimated. The catalogue's own `role` field says
+19/11/2, because it records which engine *could* fix a finding rather than
+whether policy *allows* it; two findings in `api/src/auth/` are both.
 
 See [the flow decision](docs/decisions/pr-remediation-flow.md).
 

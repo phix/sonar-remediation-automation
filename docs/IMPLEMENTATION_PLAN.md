@@ -1,6 +1,6 @@
 # Sonar Remediation Sandbox — Implementation Plan
 
-**Status:** building · 7 of 19 tickets resolved · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
+**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
 **Owner:** Nick Ratliff (`phix`) · **Feedback channel:** Microsoft Teams
 
 ---
@@ -45,7 +45,7 @@ PR opened or updated  (same-repo only — forks skipped with a non-green status)
 
 **Off by default means the out-of-the-box pipeline is silent and does not merge** — it scans, fixes, pushes and stops. That is the right default, and it means the experience above is the *switches-on* configuration. The defaults are safe, not complete.
 
-**An agentic call is permitted at exactly one point in the entire system**: generating a fix for a finding whose rule has no deterministic codemod. Grouping, fingerprinting, eligibility, test generation for codemod fixes, the red-because reason, Jira bodies and the merge decision are all deterministic. On the sandbox catalogue that is **19 findings fixed with zero LLM involvement, 11 reaching Claude, 2 refused** — a ratio the pipeline reports per run, because it is the project's whole economic argument.
+**An agentic call is permitted at exactly one point in the entire system**: generating a fix for a finding whose rule has no deterministic codemod. Grouping, fingerprinting, eligibility, test generation for codemod fixes, the red-because reason, Jira bodies and the merge decision are all deterministic. On the sandbox catalogue, with the eligibility policy enforced, that is **18 findings fixed with zero LLM involvement, 10 reaching Claude, 4 refused by policy** — measured on 2026-08-30, not estimated. The catalogue's `role` field says 19/11/2 because it records which engine *could* fix a finding rather than whether policy *allows* it; see §4.7. The pipeline reports this ratio per run, because it is the project's whole economic argument.
 
 Every arrow is gated. No stage runs on the assumption the previous one worked. The loop closes on itself — the push is what re-triggers the scan — so the guards against self-triggering are load-bearing rather than defensive.
 
@@ -121,6 +121,16 @@ This matters beyond bookkeeping. A catalogue built on the assumption of one-find
 ### 4.6 Scope narrowed to code smells
 
 Bugs and vulnerabilities are not targets for now. Recon filters `types=CODE_SMELL` (verified working). This is a current scope rather than a permanent exclusion, and it matches source spec §10's own advice to begin with low-risk code smells. It changes the sandbox catalogue: the deliberately-non-automatable examples become code smells *sitting in sensitive paths*, which is the more faithful test anyway — eligibility policy refuses work by location and risk, not by whether something is technically a smell.
+
+### 4.7 Two numbers the first real run corrected
+
+Both were estimates that survived because nothing had executed yet.
+
+**The quality gate was red on coverage, not on code smells.** The first CI scan reported `new_coverage 0.0 < 80` while `new_maintainability_rating`, `new_reliability_rating` and `new_security_rating` all passed — 32 code smells rate an **A**. So remediating every finding would not have turned the gate green, `auto_merge` would never have fired, and the loop would never have closed. The sandbox now reports lcov to Sonar, which moved `new_coverage` from `0.0` to `5.7`: still red, but red for something remediation can actually move.
+
+The trap underneath it is worth keeping. vitest writes lcov `SF:` paths relative to each workspace (`src/store.js`); the scanner runs at the repo root, where that path does not exist. Sonar then resolves nothing and reports 0% — indistinguishable from having written no tests, and visible only in a scanner log line nobody reads. [`normalize-lcov.mjs`](https://github.com/phix/sonar-sandbox-app/blob/main/.github/scripts/normalize-lcov.mjs) rewrites the paths and **asserts each one exists on disk**, so a wrong prefix fails the build rather than becoming a silent zero.
+
+**The 19/11/2 ratio is 18/10/4 once eligibility is enforced.** `javascript:S7765` (marked `codemod_fixable`) and `javascript:S7737` (marked `claude_fallback`) both sit in `api/src/auth/session.js` — the directory the catalogue's own `S1121` rationale names as the protected path. The catalogue's `role` field answers *which engine could fix this*; only the policy answers *are we allowed to*. Where they disagree the policy wins, or the pipeline edits security-sensitive code whenever a fixer happens to exist for the rule.
 
 ## 5. The map
 
