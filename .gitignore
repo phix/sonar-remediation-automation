@@ -12,3 +12,6 @@ docs/research/api-contracts-verified.md
 # generated fresh by each remediation run; the workflow writes then reads it
 remediation-comment.md
 agentic-comment.md
+
+# The subagent harness checks out full worktrees here. Never commit one.
+.claude/worktrees/
