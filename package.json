@@ -14,7 +14,8 @@
     "branch-contract": "node scripts/branch-contract.mjs",
     "agentic": "node codemods/agentic/run.mjs",
     "prove:gates": "node codemods/agentic/prove-gates.mjs",
-    "prove:templates": "node codemods/prove-templates.mjs"
+    "prove:templates": "node codemods/prove-templates.mjs",
+    "jira": "node jira/run.mjs"
   },
   "dependencies": {
     "jscodeshift": "^17.3.0",

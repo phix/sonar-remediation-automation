@@ -36,6 +36,11 @@ const findings = issues
   // exactly the kind of confident wrongness this pipeline is built against.
   .filter((i) => Number.isInteger(i.line))
   .map((i) => ({
+    // The Sonar issue key is what the Jira write-back addresses. It is the one
+    // field here that is not used by the fix engine at all, and dropping it —
+    // as this did until #17 needed it — makes step 4 of that ticket not merely
+    // untested but unbuildable: there is nothing left to write back TO.
+    key: i.key,
     rule: i.rule,
     file: i.component.includes(':') ? i.component.split(':').slice(1).join(':') : i.component,
     line: i.line,
