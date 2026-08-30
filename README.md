@@ -43,4 +43,4 @@ reaching Claude, and 2 refused by policy.
 
 See [the flow decision](docs/decisions/pr-remediation-flow.md).
 
-Status: **sandbox built and scanned-ready; the PR flow is being charted.**
+Status: **sandbox built; catalogue proven against a live Sonar scan (32 findings, 16 groups). The PR flow is being built — no workflow is wired to PR #2 yet.**

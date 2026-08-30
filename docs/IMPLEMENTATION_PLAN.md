@@ -1,6 +1,6 @@
 # Sonar Remediation Sandbox — Implementation Plan
 
-**Status:** building · 6 of 12 tickets resolved · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
+**Status:** building · 7 of 19 tickets resolved · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
 **Owner:** Nick Ratliff (`phix`) · **Feedback channel:** Microsoft Teams
 
 ---
@@ -116,7 +116,7 @@ Severities held surprises too. `javascript:S3504` (*use let or const, not var*) 
 
 An unused `const` raises **both** `S1481` (unused variable) and `S1854` (useless assignment) on the same line. Three of the catalogue's four `S1854` findings are co-located with an `S1481` in exactly this way, and a single codemod clears both.
 
-This matters beyond bookkeeping. A catalogue built on the assumption of one-finding-per-planted-smell would show phantom "unexpected" findings at the #10 gate — which is designed to treat a mismatch as a real defect. The catalogue is therefore **generated from observed findings**, never hand-written, and carries 29 finding-shaped entries rather than 23 construct-shaped ones.
+This matters beyond bookkeeping. A catalogue built on the assumption of one-finding-per-planted-smell would show phantom "unexpected" findings at the #10 gate — which is designed to treat a mismatch as a real defect. The catalogue is therefore **generated from observed findings in a real Sonar scan**, never hand-written and never from the local ESLint stand-in, and carries 32 finding-shaped entries rather than 23 construct-shaped ones.
 
 ### 4.6 Scope narrowed to code smells
 
@@ -134,14 +134,15 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 | [5](https://github.com/phix/sonar-remediation-automation/issues/5) | Map the SonarQube Cloud and Jira Cloud API contracts | [`docs/research/api-contracts.md`](research/api-contracts.md) — see §4.3 |
 | [7](https://github.com/phix/sonar-remediation-automation/issues/7) | Create the sandbox repo and decide cross-repo auth | [`docs/decisions/cross-repo-auth.md`](decisions/cross-repo-auth.md) |
 | [8](https://github.com/phix/sonar-remediation-automation/issues/8) | Build the clean Angular + Express sandbox app | `phix/sonar-sandbox-app`, 20 tests green |
-| [9](https://github.com/phix/sonar-remediation-automation/issues/9) | Inject the smell catalogue and tag `v0-pristine` | 29 findings planted, tag → `a836d3d`, build and tests still green |
+| [9](https://github.com/phix/sonar-remediation-automation/issues/9) | Inject the smell catalogue and tag `v0-pristine` | catalogue planted, build and tests still green. Now 32 findings on `demo/planted-smells`, `v0-pristine` → `243e9d2` after #14 moved them off `main` |
 | [11](https://github.com/phix/sonar-remediation-automation/issues/11) | Run the API contract verification against live accounts | 11/11 pass |
+| [14](https://github.com/phix/sonar-remediation-automation/issues/14) | Restructure the sandbox so the smells arrive as a pull request | clean `main` at `v0-clean` (`1a3f005`), defective `demo/planted-smells` at `v0-pristine` (`243e9d2`), [PR #2](https://github.com/phix/sonar-sandbox-app/pull/2) open as the standing demo target |
 
 **Awaiting Nick's yes or no** — the work and its evidence are done; these are decisions, not tasks:
 
 | # | Ticket | What is waiting |
 |---|---|---|
-| [4](https://github.com/phix/sonar-remediation-automation/issues/4) | Choose the intentional code-smell catalogue | 29 findings proposed and proven to fire. Is it representative of what you see at work? |
+| [4](https://github.com/phix/sonar-remediation-automation/issues/4) | Choose the intentional code-smell catalogue | 32 findings proposed and proven to fire against a live scan — `16/16` planted rule keys reported, 0 unexpected. Is it representative of what you see at work? |
 | [6](https://github.com/phix/sonar-remediation-automation/issues/6) | Decide the generic CI container contract | Bootstrap for execute, stock image for recon/plan — [decided and measured](decisions/ci-container.md). Agree or reject the split. |
 
 **Need Nick's hands on a console:**
@@ -150,19 +151,19 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 |---|---|---|
 | [2](https://github.com/phix/sonar-remediation-automation/issues/2) | Prove the Microsoft Teams feedback channel | Power Automate flow creation, personal account |
 | [13](https://github.com/phix/sonar-remediation-automation/issues/13) | Create and prove `SANDBOX_REPO_TOKEN` | Fine-grained PAT creation |
-| [10](https://github.com/phix/sonar-remediation-automation/issues/10) | Bind SonarQube Cloud and land a first real scan | Import the project, issue `SONAR_TOKEN` and `SONAR_TOKEN_READ` |
+| [10](https://github.com/phix/sonar-remediation-automation/issues/10) | Bind SonarQube Cloud and land a first real scan | **mostly done** — project imported as `phix_sonar-sandbox-app`, scan green locally. Remaining: issue `SONAR_TOKEN_READ`, and push `SONAR_TOKEN` into the **sandbox** repo's secrets so #15 can run it in CI |
 
 **Blocked, in dependency order:**
 
 | # | Ticket | Waits on |
 |---|---|---|
-| [14](https://github.com/phix/sonar-remediation-automation/issues/14) | Restructure the sandbox so the smells arrive as a PR | **done bar the scan proof** — [PR #2](https://github.com/phix/sonar-sandbox-app/pull/2) is open; last box needs #10 |
-| [15](https://github.com/phix/sonar-remediation-automation/issues/15) | `sonar-pr-scan.yml` and the quality gate as a required check | #10, #14 |
+| [15](https://github.com/phix/sonar-remediation-automation/issues/15) | `sonar-pr-scan.yml` and the quality gate as a required check | **the frontier** — needs only `SONAR_TOKEN` in the sandbox repo. PR #2 currently carries **zero status checks** |
 | [16](https://github.com/phix/sonar-remediation-automation/issues/16) | The remediation run: fix, test, build, push to the PR branch | #13, #15 |
 | [17](https://github.com/phix/sonar-remediation-automation/issues/17) | `jira` — the optional Jira ticketing step | #10 |
 | [18](https://github.com/phix/sonar-remediation-automation/issues/18) | The deterministic codemod library and its test templates | — takeable now |
 | [19](https://github.com/phix/sonar-remediation-automation/issues/19) | The agentic fix library, against a configurable LLM endpoint | — needs the endpoint |
 | [12](https://github.com/phix/sonar-remediation-automation/issues/12) | Finding normalization (the workflow half is superseded by #15) | — |
+| [20](https://github.com/phix/sonar-remediation-automation/issues/20) | `demo-reset.yml` — one click back to the defective baseline | **built and proven** in the sandbox repo, run twice clean. Two boxes left, both needing #16 and #17 to exist before there is anything to undo |
 
 Everything buildable without a credential Nick has not yet issued is built.
 
@@ -173,8 +174,8 @@ Nick restated the flow on 2026-08-29, after the sandbox and catalogue were built
 ### The sandbox now looks like this
 
 ```
-main                03c5384   clean · tagged v0-clean · catalogue empty by design
-demo/planted-smells b2746c5   29 findings · tagged v0-pristine
+main                1a3f005   clean · tagged v0-clean · catalogue empty by design
+demo/planted-smells 243e9d2   32 findings · tagged v0-pristine
 PR #2               demo/planted-smells -> main, standing demo target
 ```
 
@@ -182,7 +183,7 @@ PR #2               demo/planted-smells -> main, standing demo target
 
 **Reset restores two things**, and the branch is the harder one: force-push it rather than closing and reopening the PR, because PR #2's number is what Jira links, Sonar PR analysis and the required status check are all keyed to.
 
-- **#14 is new and inverts #9.** Sonar analyses a PR against *new code*, so 29 findings sitting on `main` report nothing. `main` has to be clean and the smells have to arrive as a PR. Non-destructive to fix, and none of the catalogue work is lost — it moves to a branch.
+- **#14 is new and inverts #9.** Sonar analyses a PR against *new code*, so 32 findings sitting on `main` report nothing. `main` has to be clean and the smells have to arrive as a PR. Non-destructive to fix, and none of the catalogue work is lost — it moves to a branch.
 - **#15, #16, #17 are new** and replace the not-yet-ticketed recon/plan/execute/verify chain from §6.
 - **#12 is narrowed.** `sonar-recon.yml` is superseded by #15; the normalization half survives, and no longer needs #10, since a real findings payload is already on disk.
 - **Teams has fallen out of the stated flow.** #2 is not cancelled — the PR comment may simply have replaced it, which would be the better answer. Needs an explicit yes or no.

@@ -83,7 +83,7 @@ This is what the two `non_automatable` catalogue entries exist to prove, and it 
 
 ### 4. One remediation run fixes everything eligible
 
-Not one finding per run. Each push triggers a fresh scan, so one-at-a-time would put the sandbox's 29 findings through 14+ scan cycles.
+Not one finding per run. Each push triggers a fresh scan, so one-at-a-time would put the sandbox's 32 findings through 16+ scan cycles.
 
 The cost is attribution: when a batched build fails, which of the eleven fixes broke it? Mitigated by committing one commit per rule group inside the single run, so `git bisect` and blame still answer the question, while the PR only sees one push.
 
@@ -199,15 +199,15 @@ A pipeline that hangs is worse than one that fails, because the person waiting c
 
 ### The consequence that needs action
 
-**The sandbox is currently built the wrong way round for this flow.**
+**The sandbox is currently built the wrong way round for this flow.** *(Resolved 2026-08-29 by [#14](https://github.com/phix/sonar-remediation-automation/issues/14) — the restructure below has landed. Counts are the post-scan figures, not the local-proxy estimates this was written from.)*
 
-SonarQube Cloud analyses a PR against *new code*. The 29 planted findings are on `main` at `v0-pristine`, so a PR that does not touch those lines reports **nothing**, the gate goes green, and the pipeline demonstrates precisely nothing.
+SonarQube Cloud analyses a PR against *new code*. The 32 planted findings are on `main` at `v0-pristine`, so a PR that does not touch those lines reports **nothing**, the gate goes green, and the pipeline demonstrates precisely nothing.
 
 For the flow to be demonstrable, `main` must be **clean** and the smells must arrive **as a PR**:
 
 | | now | needs to be |
 |---|---|---|
-| `main` | 29 planted findings | clean |
+| `main` | 32 planted findings | clean |
 | the smells | on `main` | on a branch that opens a PR into `main` |
 | `v0-pristine` | the defective `main` | the tip of the defective PR branch |
 | reset | force-push `main` back to the tag | restore clean `main` **and** recreate the defective PR |
