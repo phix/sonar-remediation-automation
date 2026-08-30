@@ -37,19 +37,34 @@ function makeGh(table) {
 }
 
 const notAnAncestor = () => Object.assign(new Error('fatal: not an ancestor'), { status: 1 });
+const IS_ANCESTOR = '';        // `merge-base --is-ancestor` exits 0 (no throw) => yes
+const NOT_ANCESTOR = notAnAncestor;
 
 const SHA = { dirty: 'sha-dirty-b2746c5', clean: 'sha-clean-03c5384', main: 'sha-clean-03c5384', branch: 'sha-dirty-b2746c5' };
 
 /** A git table representing a clean, fully-restored baseline: main === clean
  *  tag, branch === dirty tag, dirty diverged from (not contained in) main,
- *  every required file present. Every test starts here and mutates one entry. */
-function baselineGitTable({ main = SHA.main, branch = SHA.branch, ancestor = notAnAncestor(), files = DEFAULTS.requiredFiles } = {}) {
+ *  main descends from the clean tag, every required file present. Every test
+ *  starts here and mutates one entry.
+ *
+ *  `dirtyVsMain` answers "is v0-pristine an ancestor of main" (shared by both
+ *  the #14 ancestry check and the case-2 poisoned-baseline check — they ask
+ *  literally the same git question). `cleanVsMain` answers "is v0-clean an
+ *  ancestor of main" and is only consulted when main != the clean tag. */
+function baselineGitTable({
+  main = SHA.main,
+  branch = SHA.branch,
+  dirtyVsMain = NOT_ANCESTOR(),
+  cleanVsMain = IS_ANCESTOR,
+  files = DEFAULTS.requiredFiles
+} = {}) {
   const table = {
     'rev-parse v0-pristine^{commit}': SHA.dirty,
     'rev-parse v0-clean^{commit}': SHA.clean,
     'rev-parse origin/demo/planted-smells': branch,
     'rev-parse main': main,
-    [`merge-base --is-ancestor ${SHA.dirty} ${main}`]: ancestor,
+    [`merge-base --is-ancestor ${SHA.dirty} ${main}`]: dirtyVsMain,
+    [`merge-base --is-ancestor ${SHA.clean} ${main}`]: cleanVsMain,
   };
   for (const f of DEFAULTS.requiredFiles) {
     const key = `cat-file -e ${main}:${f}`;
@@ -117,23 +132,68 @@ describe('the branch tip', () => {
   });
 });
 
-describe('main tracking the clean tag', () => {
-  it('fails when main has drifted away from the clean tag', () => {
-    // main no longer equals the clean tag AND is not descended from the
-    // dirty tag either — a plain mismatch, e.g. history diverged unexpectedly.
-    const table = baselineGitTable({ main: 'sha-main-drifted' });
-    const result = verifyReset({ git: makeGit(table), gh: makeGh(baselineGhTable()), ghRepo: 'phix/sonar-sandbox-app', prNumber: 2 });
+describe('main tracking the clean tag — mirrors demo-reset.yml\'s three-way split', () => {
+  it('passes when main is exactly at the clean tag', () => {
+    const result = verifyBaseline();
+    const c = result.checks.find((c) => c.name === 'main tracks the clean tag');
+    expect(c.ok).toBe(true);
+    expect(c.detail).toMatch(/v0-clean/);
+  });
+
+  it('passes when main has advanced past the clean tag with ordinary commits — this is normal, not a failure', () => {
+    // The trap the coordinator caught live: main moves on its own the moment
+    // any routine tooling commit lands, and the reset never force-pushes
+    // main, so this forward drift destroys nothing. Same #14-shaped mistake,
+    // walked into from main's side instead of the branch's.
+    const result = verifyBaseline({
+      git: { main: 'sha-main-advanced', dirtyVsMain: NOT_ANCESTOR(), cleanVsMain: IS_ANCESTOR }
+    });
+    expect(result.ok).toBe(true);
+    const c = result.checks.find((c) => c.name === 'main tracks the clean tag');
+    expect(c.ok).toBe(true);
+    expect(c.detail).not.toMatch(/error|fail|rewritten|poison/i);
+  });
+
+  it('fails, and names the baseline as poisoned, when main contains the defective tip — PR #2 looks merged', () => {
+    const result = verifyBaseline({
+      git: { main: 'sha-main-poisoned', dirtyVsMain: IS_ANCESTOR, cleanVsMain: IS_ANCESTOR }
+    });
     expect(result.ok).toBe(false);
-    const c = result.checks.find((c) => c.name === 'main at clean tag');
+    const c = result.checks.find((c) => c.name === 'main tracks the clean tag');
     expect(c.ok).toBe(false);
-    expect(c.detail).toMatch(/sha-main-drifted/);
+    expect(c.detail).toMatch(/poison/i);
+    expect(c.detail).toMatch(/merged/i);
+  });
+
+  it('fails, and names history as rewritten, when main does not descend from the clean tag at all', () => {
+    const result = verifyBaseline({
+      git: { main: 'sha-main-orphaned', dirtyVsMain: NOT_ANCESTOR(), cleanVsMain: NOT_ANCESTOR() }
+    });
+    expect(result.ok).toBe(false);
+    const c = result.checks.find((c) => c.name === 'main tracks the clean tag');
+    expect(c.ok).toBe(false);
+    expect(c.detail).toMatch(/rewritten/i);
+  });
+});
+
+describe('runnable standalone, not just immediately after a reset', () => {
+  it('passes against a quiescent, healthy repo where main has drifted ahead since the last reset', () => {
+    // Decision (a) from the coordinator's review: this module documents
+    // itself as a CLI runnable at any time, and its idempotency claim implies
+    // it should pass on a healthy repo regardless of how long ago the reset
+    // ran — not only in the instant right after the tag-advance step. A
+    // strict main===cleanTag reading would contradict both of those.
+    const result = verifyBaseline({
+      git: { main: 'sha-main-advanced-again', dirtyVsMain: NOT_ANCESTOR(), cleanVsMain: IS_ANCESTOR }
+    });
+    expect(result.ok).toBe(true);
   });
 });
 
 describe('ancestry — the #14 trap', () => {
   it('fails when the defective tip is contained in main (would-be-empty PR diff)', () => {
     // git merge-base --is-ancestor exits 0 (no throw) when it IS an ancestor.
-    const result = verifyBaseline({ git: { ancestor: '' } });
+    const result = verifyBaseline({ git: { dirtyVsMain: IS_ANCESTOR } });
     expect(result.ok).toBe(false);
     const c = result.checks.find((c) => c.name === 'defective tip not merged into main');
     expect(c.ok).toBe(false);
@@ -142,7 +202,7 @@ describe('ancestry — the #14 trap', () => {
 
   it('passes when the defective tip has merely diverged from main — that is normal', () => {
     // This is the case #14 got backwards: diverged (not an ancestor) is fine.
-    const result = verifyBaseline({ git: { ancestor: notAnAncestor() } });
+    const result = verifyBaseline({ git: { dirtyVsMain: NOT_ANCESTOR() } });
     expect(result.ok).toBe(true);
     const c = result.checks.find((c) => c.name === 'defective tip not merged into main');
     expect(c.ok).toBe(true);
@@ -150,7 +210,7 @@ describe('ancestry — the #14 trap', () => {
 
   it('propagates a genuine git error rather than reading it as "not an ancestor"', () => {
     const badError = Object.assign(new Error('fatal: not a valid object name'), { status: 128 });
-    expect(() => verifyBaseline({ git: { ancestor: badError } })).toThrow(/not a valid object name/);
+    expect(() => verifyBaseline({ git: { dirtyVsMain: badError } })).toThrow(/not a valid object name/);
   });
 });
 

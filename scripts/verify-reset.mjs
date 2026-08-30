@@ -31,16 +31,33 @@
  * since — which is exactly what "running the reset twice in a row" looks
  * like from here: the second run's state is identical to the first's, so
  * this reports the same pass both times rather than needing to know which
- * run it is.
+ * run it is. This module is deliberately runnable at ANY time against a
+ * quiescent repo, not only in the instant right after a reset's own
+ * tag-advance step — a live check against `phix/sonar-sandbox-app` is what
+ * caught the "main tracks the clean tag" bug below, precisely because it was
+ * run standalone, hours after the last reset, against a repo main had since
+ * moved past by ordinary commits. The check that treated that as a failure
+ * was mis-scoping itself to "immediately post-reset" without saying so; the
+ * fix is not the documentation, it is the check.
  *
- * ## Two traps already paid for once
+ * ## Three traps already paid for once
  *
  * `#14`: an empty PR diff happens only when the defective tip is CONTAINED
  * in main — having *diverged* from main is normal and fine, and asserting
  * the stricter "must descend from main" version breaks the moment main
  * advances on its own. `#9`: a required file added to main after the clean
  * tag was cut is silently gone on reset, and the failure it causes surfaces
- * three steps downstream with no visible link back to the reset.
+ * three steps downstream with no visible link back to the reset. The third
+ * is this module's own, walked into from the other side of the #14 trap:
+ * "main tracks the clean tag" was first written as strict SHA equality,
+ * which is exactly as over-strict as "the branch must descend from main"
+ * was in #14, and breaks for the identical reason — main moving forward is
+ * normal. `demo-reset.yml`'s "Keep v0-clean tracking main" step already
+ * distinguishes the two cases that ARE real failures (main contains the
+ * defective tip — PR #2 looks merged, the baseline is poisoned; main does
+ * not descend from the clean tag at all — history was rewritten) from the
+ * benign one (main simply advanced), and `checkMainTracksCleanTag` below
+ * reproduces that three-way split rather than approximating it.
  *
  *   node scripts/verify-reset.mjs --repo DIR --gh-repo owner/name --pr N
  *        [--base main] [--dirty-tag v0-pristine] [--clean-tag v0-clean]
@@ -81,6 +98,55 @@ const failed = (name, detail) => ({ name, ok: false, detail });
 function explain(e) {
   const stderr = e && e.stderr ? String(e.stderr).trim() : '';
   return stderr || e.message;
+}
+
+/** True when `ancestor` is `descendant`, or reachable by walking descendant's
+ *  history — git's own definition, via `merge-base --is-ancestor`, which also
+ *  answers true when the two SHAs are equal. Any exit code other than the
+ *  documented "no" (status 1) is a real failure and must propagate rather
+ *  than be read as an answer — the same rule `verifyReset`'s #14 check has
+ *  always followed, now shared with the clean-tag check below. */
+function isAncestor(git, ancestor, descendant) {
+  try {
+    git('merge-base', '--is-ancestor', ancestor, descendant); // exit 0 == yes
+    return true;
+  } catch (e) {
+    if (e.status === 1) return false;
+    throw e;
+  }
+}
+
+/**
+ * The three-way split from `demo-reset.yml`'s "Keep v0-clean tracking main"
+ * step, reproduced exactly rather than approximated, because approximating
+ * it as strict equality is the bug this fixes: main sitting exactly on the
+ * clean tag AND main having advanced past it with ordinary commits are BOTH
+ * fine. Main moves on its own the instant any routine tooling commit lands,
+ * and a reset never force-pushes main, so forward drift destroys nothing —
+ * treating it as a failure is the #14 mistake, walked into from main's side
+ * instead of the branch's. Only two things are actually wrong: main
+ * containing the defective tip (PR #2 looks merged, the baseline is
+ * poisoned) and main not descending from the clean tag at all (history was
+ * rewritten). Those two get their own named sentence in the detail, because
+ * a bare SHA mismatch cannot tell a demo operator which of the two they are
+ * looking at, and one of them is fixed by running the reset and the other by
+ * reverting a merge first.
+ */
+function checkMainTracksCleanTag(git, { base, mainSha, cleanTag, cleanSha, dirtyTag, dirtySha, prNumber }) {
+  const name = 'main tracks the clean tag';
+  if (mainSha === cleanSha) {
+    return passed(name, `${base} is at ${cleanTag} (${mainSha})`);
+  }
+  if (dirtySha && isAncestor(git, dirtySha, mainSha)) {
+    return failed(name, `${base} (${mainSha}) contains ${dirtyTag} — PR #${prNumber ?? '?'} looks merged, the `
+      + `baseline is poisoned. A reset from here would restore a DIRTY ${base}; revert the merge first.`);
+  }
+  if (!isAncestor(git, cleanSha, mainSha)) {
+    return failed(name, `${base} (${mainSha}) does not descend from ${cleanTag} (${cleanSha}) — history was `
+      + 'rewritten. Resolve by hand.');
+  }
+  return passed(name, `${base} has advanced past ${cleanTag} with ordinary commits (now ${mainSha}) — benign, `
+    + 'the tag should track it');
 }
 
 /**
@@ -140,35 +206,22 @@ export function verifyReset({
     checks.push(failed('branch tip at dirty tag', `skipped — ${dirtyTag} did not resolve`));
   }
 
-  // ---- main equals the clean tag -------------------------------------------
+  // ---- main resolves, then tracks the clean tag (or has advanced past it) -
   try {
     mainSha = git('rev-parse', base);
-    if (cleanSha) {
-      checks.push(mainSha === cleanSha
-        ? passed('main at clean tag', `${base} is at ${cleanTag} (${mainSha})`)
-        : failed('main at clean tag', `${base} is at ${mainSha}, ${cleanTag} is at ${cleanSha}`));
-    } else {
-      checks.push(failed('main at clean tag', `skipped — ${cleanTag} did not resolve`));
-    }
+    checks.push(cleanSha
+      ? checkMainTracksCleanTag(git, { base, mainSha, cleanTag, cleanSha, dirtyTag, dirtySha, prNumber })
+      : failed('main tracks the clean tag', `skipped — ${cleanTag} did not resolve`));
   } catch (e) {
-    checks.push(failed('main at clean tag', `could not read ${base}: ${explain(e)}`));
+    checks.push(failed('main tracks the clean tag', `could not read ${base}: ${explain(e)}`));
   }
 
   // ---- ancestry: the defective tip must not be CONTAINED in main (#14) ----
   // Diverged is normal; contained means the PR diff would come out empty.
+  // Asks the same git question as the poisoned-baseline case above, on
+  // purpose — demo-reset.yml asserts it in two separate steps too.
   if (dirtySha && mainSha) {
-    let isAncestor;
-    try {
-      git('merge-base', '--is-ancestor', dirtySha, mainSha); // exit 0 == is an ancestor
-      isAncestor = true;
-    } catch (e) {
-      if (e.status === 1) {
-        isAncestor = false; // git's documented "no" for --is-ancestor
-      } else {
-        throw e; // a real failure (bad object name, etc.) — do not read it as "no"
-      }
-    }
-    checks.push(isAncestor
+    checks.push(isAncestor(git, dirtySha, mainSha)
       ? failed('defective tip not merged into main',
           `${dirtyTag} is contained in ${base} — PR #${prNumber ?? '?'} looks merged; the PR diff would come out empty`)
       : passed('defective tip not merged into main',
