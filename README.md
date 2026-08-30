@@ -6,6 +6,7 @@ A reference implementation built on a synthetic sandbox ([`phix/sonar-sandbox-ap
 
 ## Where to start
 
+- **[Handoff](docs/HANDOFF.md)** — verified state, what is blocked, and the traps. Start here.
 - **[Implementation plan](docs/IMPLEMENTATION_PLAN.md)** — what is being built, what is decided, what is next.
 - **[The map](https://github.com/phix/sonar-remediation-automation/issues/1)** — live work tracking. Child issues are tickets; GitHub-native dependencies show what blocks what.
 - **[Source design docs](docs/source/)** — the architecture spec, plan JSON schema, Jira state model, and workflow design this is built from.
