@@ -15,12 +15,28 @@
  *    office's approved endpoint differs, this function is the only thing that
  *    changes. That is what the seam is for.
  *
- * The connect and response deadlines are genuinely separate rather than one
- * budget wearing two names: `fetch` resolves when the response *headers*
- * arrive, so the time to that point is connect-and-first-byte, and the time
- * spent draining the body afterwards is measured against what remains of the
- * total. A model that accepts the connection and then streams nothing is the
- * exact failure this split catches.
+ * On deadlines, corrected 2026-08-30 against the live tinman endpoint:
+ *
+ * `fetch` resolves when the response *headers* arrive. This was originally
+ * read as connect-and-first-byte and given a 10s budget — which is true of a
+ * STREAMING endpoint, and false of this one. A non-streaming completion
+ * generates the entire answer before it sends a single header, so the wait for
+ * headers IS the generation time. Measured on tinman: 74s cold (model loading)
+ * and comfortably over 10s warm on a real remediation prompt. The 10s budget
+ * killed every attempt and reported `infra_failure_transient` — telling
+ * somebody to go check a server that was working perfectly, which is the exact
+ * confusion the top of this file says it exists to prevent.
+ *
+ * The deadline was never what caught a dead host anyway. A refused connection
+ * or a DNS failure REJECTS the fetch promise immediately, and the catch below
+ * classifies it in milliseconds without any deadline being involved. The
+ * header budget only ever bounded "accepted the socket, then went quiet" —
+ * indistinguishable, on a non-streaming endpoint, from "is generating".
+ *
+ * So it is now named for what it measures, and sized for a self-hosted model
+ * rather than a hosted API. The body budget is its own number instead of
+ * whatever is left over, because deriving it meant a slow generation starved
+ * the parse of the small JSON that followed it.
  */
 
 /** Spec §14 failure classes, the two this module can produce. */
@@ -53,8 +69,13 @@ export class LlmUnavailable extends Error {
 }
 
 export const DEFAULTS = Object.freeze({
-  connectTimeoutMs: 10_000,
-  responseTimeoutMs: 120_000,
+  // Time to headers, which on a non-streaming endpoint is the generation
+  // budget. Sized for a cold self-hosted model (74s measured on tinman for a
+  // 14B load), not for a hosted API.
+  headerTimeoutMs: 180_000,
+  // Draining the completed JSON body. Its own number, not the remainder of
+  // some larger budget.
+  bodyTimeoutMs: 30_000,
   maxRetries: 2,          // spec §15: 1-2, never unbounded
   backoffMs: 1_000
 });
@@ -103,6 +124,10 @@ async function attempt(config, messages, opts, deadlines, startedAt) {
   const body = JSON.stringify({
     model: config.model,
     messages,
+    // Explicit, because the deadline model above depends on it. Turning this
+    // on would make headers arrive immediately and would require the body to
+    // be consumed as an event stream rather than parsed as one JSON document.
+    stream: false,
     temperature: opts.temperature ?? 0,
     max_tokens: opts.maxTokens ?? 4096
   });
@@ -128,9 +153,11 @@ async function attempt(config, messages, opts, deadlines, startedAt) {
         body,
         signal: controller.signal
       }),
-      deadlines.connectTimeoutMs,
+      deadlines.headerTimeoutMs,
       () => fail(
-        `No response headers from ${url} within ${deadlines.connectTimeoutMs}ms.`,
+        `No response headers from ${url} within ${deadlines.headerTimeoutMs}ms. `
+        + 'On a non-streaming endpoint this is the generation budget, so the model '
+        + 'is either much slower than expected or wedged.',
         TRANSIENT
       )
     );
@@ -147,14 +174,15 @@ async function attempt(config, messages, opts, deadlines, startedAt) {
     throw fail(`${url} returned HTTP ${res.status}. ${detail}`.trim(), cls, res.status);
   }
 
-  const spent = opts.now() - startedAt;
-  const remaining = Math.max(1, deadlines.responseTimeoutMs - spent);
   let payload;
   try {
     payload = await withDeadline(
       res.json(),
-      remaining,
-      () => fail(`Headers arrived but the body did not complete within ${remaining}ms.`, TRANSIENT)
+      deadlines.bodyTimeoutMs,
+      () => fail(
+        `Headers arrived but the body did not complete within ${deadlines.bodyTimeoutMs}ms.`,
+        TRANSIENT
+      )
     );
   } catch (e) {
     if (e instanceof LlmUnavailable) throw e;
@@ -190,9 +218,15 @@ export async function chat(config, messages, options = {}) {
     maxTokens: options.maxTokens,
     log: options.log || (() => {})
   };
+  // The old names are still accepted. prove-gates.mjs and the suite both drive
+  // this with tiny `connectTimeoutMs` values to force the bounded-wait path,
+  // and silently ignoring them would turn those into tests that wait three
+  // minutes instead of tests that fail.
   const deadlines = {
-    connectTimeoutMs: options.connectTimeoutMs ?? DEFAULTS.connectTimeoutMs,
-    responseTimeoutMs: options.responseTimeoutMs ?? DEFAULTS.responseTimeoutMs
+    headerTimeoutMs: options.headerTimeoutMs ?? options.connectTimeoutMs
+      ?? DEFAULTS.headerTimeoutMs,
+    bodyTimeoutMs: options.bodyTimeoutMs ?? options.responseTimeoutMs
+      ?? DEFAULTS.bodyTimeoutMs
   };
   const maxRetries = options.maxRetries ?? DEFAULTS.maxRetries;
   const backoffMs = options.backoffMs ?? DEFAULTS.backoffMs;

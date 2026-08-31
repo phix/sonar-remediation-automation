@@ -92,15 +92,24 @@ Three of these cannot exist until earlier tickets land. They are gated, not forg
 | `SONAR_PROJECT_KEY` | issue #10 — no SonarCloud project until the sandbox repo is imported |
 | `SANDBOX_REPO_TOKEN` | issue #7 — the sandbox repo does not exist yet |
 
-The **agentic fix endpoint** is only needed once the fix engine reaches a finding no codemod can handle. It is Nick's own OpenLLM deployment, reached through a single swappable seam — nothing here is bound to a model vendor, which matters for the handoff because the office will have its own approved endpoint.
+The **agentic fix endpoint** is only needed once the fix engine reaches a finding no codemod can handle. It is **Ollama on `tinman`**, reached through a single swappable seam — nothing here is bound to a model vendor, which matters for the handoff because the office will have its own approved endpoint. Confirmed OpenAI-compatible (`POST {base}/chat/completions`), so the client needs no change; see `docs/decisions/llm-endpoint-transport.md`.
 
 | Name | Secret? | Purpose |
 |---|---|---|
-| `LLM_BASE_URL` | no — config | endpoint root, e.g. `https://…/v1` |
-| `LLM_API_KEY` | **yes** | bearer credential |
-| `LLM_MODEL` | no — config | model identifier |
+| `LLM_BASE_URL` | no — config | `http://tinman:11434/v1` |
+| `LLM_API_KEY` | no — **placeholder** | Ollama ignores bearer auth. Any non-empty string. See below. |
+| `LLM_MODEL` | no — config | `qwen2.5-coder:14b` — the only model pulled on tinman |
 
-Assumed OpenAI-compatible (`POST {base}/chat/completions`, bearer auth). If the deployment is not, only the client function changes.
+`LLM_API_KEY` was previously listed here as a secret. It is not one, and leaving it that way sends whoever picks this up hunting for a credential that was never issued. It is required only because `configFromEnv` refuses to run with any of the three unset — a guard kept deliberately, because the office endpoint that replaces tinman **will** need a real key, and a guard that first appears then is too late.
+
+`tinman` is LAN/tailnet-only (`192.168.1.217`), so GitHub-hosted runners cannot reach it by default. `remediate.yml` joins the tailnet in-job, which needs two secrets **on the sandbox repository**:
+
+| Name | Secret? | Purpose |
+|---|---|---|
+| `TS_OAUTH_CLIENT_ID` | yes | tailnet OAuth client, `auth_keys` scope |
+| `TS_OAUTH_SECRET` | yes | its secret |
+
+Both are issued from the Tailscale admin console and must carry an ACL tag (e.g. `tag:ci`) that is permitted to reach tinman:11434.
 
 This supersedes the `ANTHROPIC_API_KEY` the original spec assumed.
 
