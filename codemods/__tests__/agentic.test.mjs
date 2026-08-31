@@ -19,12 +19,38 @@ function fakeFetch(responses) {
   impl.calls = calls;
   return impl;
 }
+// Non-2xx answers never reach the stream reader -- the client throws on
+// !res.ok after reading .text() -- so these stay plain objects.
 const json = (body, status = 200) => ({
   ok: status >= 200 && status < 300, status,
   json: async () => body,
   text: async () => JSON.stringify(body)
 });
-const ok = (content) => json({ choices: [{ message: { content } }], usage: { total_tokens: 42 } });
+
+/**
+ * A 200 whose body is a real SSE stream, because that is what the client now
+ * reads. Faking a resolved JSON document here would test a code path that no
+ * longer exists.
+ */
+const enc = new TextEncoder();
+const sse = (frames, { trailing = true } = {}) => ({
+  ok: true, status: 200,
+  text: async () => frames.join(''),
+  body: (async function* () {
+    for (const f of frames) yield enc.encode(f);
+    if (trailing) yield enc.encode('data: [DONE]\n\n');
+  })()
+});
+
+/** Content split across two deltas, so the accumulator is actually exercised. */
+const ok = (content) => {
+  const half = Math.ceil(content.length / 2);
+  return sse([
+    `data: ${JSON.stringify({ choices: [{ delta: { content: content.slice(0, half) } }] })}\n\n`,
+    `data: ${JSON.stringify({ choices: [{ delta: { content: content.slice(half) } }] })}\n\n`,
+    `data: ${JSON.stringify({ choices: [{ delta: {} }], usage: { total_tokens: 42 } })}\n\n`
+  ]);
+};
 
 const CONFIG = { baseUrl: 'https://llm.example/v1', model: 'm', apiKey: 'k' };
 const NO_WAIT = { sleep: async () => {}, backoffMs: 0 };
@@ -78,20 +104,50 @@ describe('the client cannot hang and always classifies', () => {
     expect(f.calls.length).toBe(1);
   });
 
-  it('budgets headers for generation, not for a handshake', () => {
-    // 54s cold was measured against tinman. A default at or below that turns a
-    // cold model load into a false "endpoint unavailable".
+  it('budgets a cold model load for headers, and generation separately', () => {
+    // A cold 14B took 74s to produce its first token. A header budget at or
+    // below that turns a model loading into a false "endpoint unavailable".
     expect(DEFAULTS.headerTimeoutMs).toBeGreaterThan(60_000);
-    // The body is a small completed JSON document and must NOT be given
-    // whatever a slow generation happened to leave over.
-    expect(DEFAULTS.bodyTimeoutMs).toBeGreaterThan(0);
-    expect(DEFAULTS.bodyTimeoutMs).toBeLessThan(DEFAULTS.headerTimeoutMs);
+    // Silence between chunks is "wedged", not "slow" -- at ~5 tok/s a healthy
+    // stream never goes a minute without a token. It must be far below the
+    // total, or it stops being a distinct signal.
+    expect(DEFAULTS.stallTimeoutMs).toBeGreaterThan(0);
+    expect(DEFAULTS.stallTimeoutMs).toBeLessThan(DEFAULTS.totalTimeoutMs);
+    // One real fix measured 339.6s at 7b. A total at or under that would fail
+    // every genuine call.
+    expect(DEFAULTS.totalTimeoutMs).toBeGreaterThan(340_000);
   });
 
-  it('sends stream:false, because the deadline model depends on it', async () => {
-    const f = fakeFetch([ok('x')]);
+  it('sends stream:true, because non-streaming is unfixable at this endpoint', async () => {
+    // Not a preference. A real fix takes 339.6s and undici enforces its own
+    // 300s headers ceiling that no option here can raise, so a non-streaming
+    // request cannot complete at any budget this module could choose.
+    const f = fakeFetch([() => ok('x')]);
     await chat(CONFIG, [], { ...NO_WAIT, fetchImpl: f, maxRetries: 0 });
-    expect(JSON.parse(f.calls[0].init.body).stream).toBe(false);
+    expect(JSON.parse(f.calls[0].init.body).stream).toBe(true);
+  });
+
+  it('accumulates content across deltas rather than reading one final message', async () => {
+    const f = fakeFetch([() => ok('corrected source here')]);
+    const r = await chat(CONFIG, [], { ...NO_WAIT, fetchImpl: f, maxRetries: 0 });
+    expect(r.content).toBe('corrected source here');
+    expect(r.usage).toEqual({ total_tokens: 42 });
+  });
+
+  it('calls a stream that goes silent mid-generation wedged, not slow', async () => {
+    const enc2 = new TextEncoder();
+    const stalled = () => ({
+      ok: true, status: 200, text: async () => '',
+      body: (async function* () {
+        yield enc2.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: 'partial' } }] })}\n\n`);
+        await new Promise(() => {});   // tokens started, then nothing, ever
+      })()
+    });
+    const err = await chat(CONFIG, [], { ...NO_WAIT, fetchImpl: fakeFetch([stalled]), maxRetries: 0, stallTimeoutMs: 40 })
+      .catch((e) => e);
+    expect(err).toBeInstanceOf(LlmUnavailable);
+    expect(err.classification).toBe(TRANSIENT);
+    expect(err.message).toMatch(/wedged rather than slow/);
   });
 
   it('still honours the old option names, so the provers keep failing fast', async () => {
@@ -102,7 +158,7 @@ describe('the client cannot hang and always classifies', () => {
   });
 
   it('calls a 200 with the wrong shape persistent, because retrying will not make it OpenAI-compatible', async () => {
-    const f = fakeFetch([json({ result: 'not openai shaped' })]);
+    const f = fakeFetch([sse([`data: ${JSON.stringify({ result: 'not openai shaped' })}\n\n`])]);
     const err = await chat(CONFIG, [], { ...NO_WAIT, fetchImpl: f, maxRetries: 2 }).catch((e) => e);
     expect(err.classification).toBe(PERSISTENT);
     expect(err.message).toMatch(/OpenAI-compatible/);
@@ -233,7 +289,10 @@ const GOOD_FIX = `export function pick(a, b, c) {
 const FINDING = { rule: 'typescript:S3358', file: 'web/src/app/orders/order-stats.ts', line: 2, message: 'nested ternary' };
 
 function llmReturning(fix, test = 'import { pick } from "./order-stats";\ntest("t", () => {});\n') {
-  return { fetchImpl: fakeFetch([ok(`===FIX===\n${fix}\n===TEST===\n${test}\n===END===`)]) };
+  // A thunk, not a value: a stream body can only be read once, and real HTTP
+  // hands out a fresh one per request. Sharing one across proposal attempts
+  // made the second attempt read an exhausted stream.
+  return { fetchImpl: fakeFetch([() => ok(`===FIX===\n${fix}\n===TEST===\n${test}\n===END===`)]) };
 }
 
 describe('the model is never trusted, only used', () => {
@@ -285,7 +344,7 @@ describe('the model is never trusted, only used', () => {
   });
 
   it('feeds the prior rejection back into the retry, per spec §15', async () => {
-    const f = fakeFetch([ok(`===FIX===\n${GOOD_FIX}\n===TEST===\nx\n===END===`)]);
+    const f = fakeFetch([() => ok(`===FIX===\n${GOOD_FIX}\n===TEST===\nx\n===END===`)]);
     await fixOne(FINDING, {
       ...base, workspace: fakeWorkspace({ build: false }),
       llm: { ...NO_WAIT, fetchImpl: f }, maxProposalAttempts: 2

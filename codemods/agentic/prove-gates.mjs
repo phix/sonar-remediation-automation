@@ -125,12 +125,22 @@ const findingFor = (root) => ({
 
 function llmSaying(fix, test) {
   const content = `===FIX===\n${fix}\n===TEST===\n${test}\n===END===`;
+  const enc = new TextEncoder();
+  // An SSE body, because that is what the client reads now. A resolved JSON
+  // document here would prove the gates against a transport that no longer
+  // exists -- and a prover that passes on a path nothing uses is worse than
+  // no prover. Built fresh per call: a stream can only be read once, and the
+  // retry scenarios call this more than once.
   return {
     sleep: async () => {},
     fetchImpl: async () => ({
       ok: true, status: 200,
-      json: async () => ({ choices: [{ message: { content } }], usage: { total_tokens: 1 } }),
-      text: async () => ''
+      text: async () => '',
+      body: (async function* () {
+        yield enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+        yield enc.encode(`data: ${JSON.stringify({ choices: [{ delta: {} }], usage: { total_tokens: 1 } })}\n\n`);
+        yield enc.encode('data: [DONE]\n\n');
+      })()
     })
   };
 }

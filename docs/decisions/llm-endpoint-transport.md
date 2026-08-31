@@ -11,7 +11,7 @@ The agentic fix path points at **Nick's Ollama deployment on `tinman`**, and
 | | |
 |---|---|
 | `LLM_BASE_URL` | `http://tinman:11434/v1` |
-| `LLM_MODEL` | `qwen2.5-coder:14b` |
+| `LLM_MODEL` | `qwen2.5-coder:7b` |
 | `LLM_API_KEY` | a placeholder, not a credential — see §"The key is not a key" |
 
 ## Why this needed a decision at all
@@ -142,3 +142,42 @@ is where the defects live.
 
 ~20s per finding warm. The current ratio is 10 findings on the agentic path, and
 `maxProposalAttempts` defaults to 2, so a full run is minutes, not seconds.
+
+
+## The transport had to change, and the reason is a number
+
+Proven in CI on 2026-08-31, after the tailnet finally came up. The runner
+reached tinman (`GET /v1/models -> 200`) and then failed every model call.
+Not a route problem, not a credential problem: the model is slow, and the
+request shape could not survive it.
+
+| | |
+|---|---|
+| tinman generation rate | **~5 tokens/sec**, fully GPU-offloaded |
+| one real fix | ~1750 output tokens |
+| `qwen2.5-coder:7b` | **343.6s** end to end |
+| `qwen2.5-coder:14b` | did not finish inside 10 minutes |
+| **Node undici's own headers ceiling** | **300s, and not configurable from here** |
+
+343 > 300. So a non-streaming request **cannot complete at this endpoint at any
+budget this codebase could set** — undici kills it before `headerTimeoutMs`
+is ever consulted. The earlier fix that raised that budget to 180s was
+therefore raising a number that does not control the outcome. That was a real
+defect in the fix, not just a conservative setting.
+
+`stream: true` resolves it: headers arrive in **0.4s**, and the wait becomes a
+stream that can be watched rather than a silence that can only be timed. It
+also adds the signal the old shape could not express at all — **a stall**. With
+nothing arriving until the end, a working model and a wedged one are
+indistinguishable; with a stream, silence between chunks means wedged.
+
+The three deadlines now mean three different things:
+
+| | |
+|---|---|
+| `headerTimeoutMs` 120s | to first token — sized for a COLD model load (74s measured) |
+| `stallTimeoutMs` 60s | longest silence between chunks — at 5 tok/s this is wedged, not slow |
+| `totalTimeoutMs` 900s | ceiling on one attempt — 343s measured, with headroom |
+
+And the model is now **7b**. 14b is not viable on this hardware for this prompt
+shape, which asks for a corrected file plus a test.

@@ -98,7 +98,7 @@ The **agentic fix endpoint** is only needed once the fix engine reaches a findin
 |---|---|---|
 | `LLM_BASE_URL` | no — config | `http://tinman:11434/v1` |
 | `LLM_API_KEY` | no — **placeholder** | Ollama ignores bearer auth. Any non-empty string. See below. |
-| `LLM_MODEL` | no — config | `qwen2.5-coder:14b` — the only model pulled on tinman |
+| `LLM_MODEL` | no — config | `qwen2.5-coder:7b` — 14b is too slow on tinman (~5 tok/s); see the decision record |
 
 `LLM_API_KEY` was previously listed here as a secret. It is not one, and leaving it that way sends whoever picks this up hunting for a credential that was never issued. It is required only because `configFromEnv` refuses to run with any of the three unset — a guard kept deliberately, because the office endpoint that replaces tinman **will** need a real key, and a guard that first appears then is too late.
 

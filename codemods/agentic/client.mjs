@@ -15,28 +15,43 @@
  *    office's approved endpoint differs, this function is the only thing that
  *    changes. That is what the seam is for.
  *
- * On deadlines, corrected 2026-08-30 against the live tinman endpoint:
+ * On deadlines, corrected twice against the live tinman endpoint.
  *
- * `fetch` resolves when the response *headers* arrive. This was originally
- * read as connect-and-first-byte and given a 10s budget — which is true of a
- * STREAMING endpoint, and false of this one. A non-streaming completion
- * generates the entire answer before it sends a single header, so the wait for
- * headers IS the generation time. Measured on tinman: 74s cold (model loading)
- * and comfortably over 10s warm on a real remediation prompt. The 10s budget
- * killed every attempt and reported `infra_failure_transient` — telling
- * somebody to go check a server that was working perfectly, which is the exact
- * confusion the top of this file says it exists to prevent.
+ * FIRST, the budget was wrong. `fetch` resolves when the response *headers*
+ * arrive, which was read as connect-and-first-byte and given 10s. That is a
+ * STREAMING endpoint's timing. Non-streaming, the model generates the whole
+ * answer before sending a header, so the header wait IS the generation time,
+ * and every call died on the deadline and was blamed on the endpoint.
  *
- * The deadline was never what caught a dead host anyway. A refused connection
- * or a DNS failure REJECTS the fetch promise immediately, and the catch below
- * classifies it in milliseconds without any deadline being involved. The
- * header budget only ever bounded "accepted the socket, then went quiet" —
- * indistinguishable, on a non-streaming endpoint, from "is generating".
+ * SECOND, and this is why the request now streams: raising that budget does
+ * not help, because it was never the binding constraint. **Node's undici
+ * enforces its own 300s headers timeout**, independent of anything this module
+ * sets, and a real remediation prompt exceeds it. Measured on tinman against
+ * the actual sandbox file:
  *
- * So it is now named for what it measures, and sized for a self-hosted model
- * rather than a hosted API. The body budget is its own number instead of
- * whatever is left over, because deriving it meant a slow generation starved
- * the parse of the small JSON that followed it.
+ *   qwen2.5-coder:7b   339.6s, 1742 output tokens, 5.1 tok/s
+ *   qwen2.5-coder:14b  did not finish inside 10 minutes
+ *
+ * 339s > 300s, so a non-streaming request is unfixable here at ANY budget this
+ * module could choose. A smaller model does not rescue it either -- the box
+ * generates about five tokens a second and the prompt asks for a corrected
+ * file plus a test.
+ *
+ * Streaming makes the headers arrive in 0.4s, which finally makes the
+ * two-deadline split mean what it always claimed to mean, and adds the one it
+ * was missing:
+ *
+ *   headerTimeoutMs  - time to response headers. Genuinely a handshake again.
+ *   stallTimeoutMs   - longest silence BETWEEN chunks. This is what catches a
+ *                      wedged model, and it is the check a non-streaming
+ *                      request cannot make at all: silence and work look
+ *                      identical when nothing arrives until the end.
+ *   totalTimeoutMs   - overall ceiling on one attempt.
+ *
+ * A dead host still fails in milliseconds without any deadline involved: a
+ * refused connection or a DNS failure rejects the fetch promise outright and
+ * the catch below classifies it. The budgets have never been what detected
+ * that.
  */
 
 /** Spec §14 failure classes, the two this module can produce. */
@@ -69,13 +84,17 @@ export class LlmUnavailable extends Error {
 }
 
 export const DEFAULTS = Object.freeze({
-  // Time to headers, which on a non-streaming endpoint is the generation
-  // budget. Sized for a cold self-hosted model (74s measured on tinman for a
-  // 14B load), not for a hosted API.
-  headerTimeoutMs: 180_000,
-  // Draining the completed JSON body. Its own number, not the remainder of
-  // some larger budget.
-  bodyTimeoutMs: 30_000,
+  // Streaming, so this really is the handshake: 0.4s measured, 120s allowed
+  // because a COLD model still loads before it emits its first token (74s
+  // measured for a 14B load).
+  headerTimeoutMs: 120_000,
+  // Longest acceptable silence between chunks once generation has started. At
+  // ~5 tok/s a healthy stream never goes 60s without a token, so this is
+  // "wedged", not "slow".
+  stallTimeoutMs: 60_000,
+  // Overall ceiling for one attempt. 339s measured for one real fix at 7b;
+  // 15 minutes leaves room for a longer file without being unbounded.
+  totalTimeoutMs: 900_000,
   maxRetries: 2,          // spec §15: 1-2, never unbounded
   backoffMs: 1_000
 });
@@ -115,6 +134,73 @@ async function withDeadline(promise, ms, onTimeout) {
 }
 
 /**
+ * Read an OpenAI-style SSE stream into one string.
+ *
+ * Two deadlines are enforced while reading, and they answer different
+ * questions. `stallTimeoutMs` asks "is anything still arriving?" -- the check
+ * that only exists because this streams; a non-streaming request cannot
+ * distinguish a working model from a wedged one, because both send nothing
+ * until the end. `totalTimeoutMs` asks "has this gone on too long regardless?"
+ *
+ * Malformed lines are skipped rather than thrown on. A stream that ends early
+ * still yields whatever content arrived, and the caller decides whether an
+ * empty result is a failure -- which it does, above.
+ */
+export async function consumeStream(res, opts, deadlines, fail) {
+  const reader = res.body[Symbol.asyncIterator]
+    ? res.body[Symbol.asyncIterator]()
+    : res.body.getReader?.();
+  const decoder = new TextDecoder();
+  const startedAt = opts.now();
+  let buffer = '';
+  let content = '';
+  let usage = null;
+
+  const next = async () => {
+    if (reader.next) return reader.next();
+    const { done, value } = await reader.read();
+    return { done, value };
+  };
+
+  for (;;) {
+    const chunk = await withDeadline(
+      next(),
+      deadlines.stallTimeoutMs,
+      () => fail(
+        `The stream went silent for ${deadlines.stallTimeoutMs}ms. `
+        + 'Tokens were arriving and then stopped, so the model is wedged rather than slow.',
+        TRANSIENT
+      )
+    );
+    if (chunk.done) break;
+    if (opts.now() - startedAt > deadlines.totalTimeoutMs) {
+      throw fail(
+        `The stream was still arriving after ${deadlines.totalTimeoutMs}ms. `
+        + 'It is generating, just not within any budget worth waiting for.',
+        TRANSIENT
+      );
+    }
+
+    buffer += decoder.decode(chunk.value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() ?? '';
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t.startsWith('data:')) continue;
+      const data = t.slice(5).trim();
+      if (data === '[DONE]') continue;
+      let evt;
+      try { evt = JSON.parse(data); } catch { continue; }  // a partial frame, not a failure
+      const delta = evt?.choices?.[0]?.delta?.content;
+      if (typeof delta === 'string') content += delta;
+      if (evt?.usage) usage = evt.usage;
+    }
+  }
+
+  return { content, usage };
+}
+
+/**
  * One attempt. Throws `LlmUnavailable` with a classification; never resolves
  * on a non-2xx.
  */
@@ -124,10 +210,11 @@ async function attempt(config, messages, opts, deadlines, startedAt) {
   const body = JSON.stringify({
     model: config.model,
     messages,
-    // Explicit, because the deadline model above depends on it. Turning this
-    // on would make headers arrive immediately and would require the body to
-    // be consumed as an event stream rather than parsed as one JSON document.
-    stream: false,
+    // Streaming is required here, not preferred -- see the header comment.
+    // A non-streaming request cannot complete at this endpoint's speed
+    // because undici kills it at 300s before any budget of ours applies.
+    stream: true,
+    stream_options: { include_usage: true },
     temperature: opts.temperature ?? 0,
     max_tokens: opts.maxTokens ?? 4096
   });
@@ -174,33 +261,25 @@ async function attempt(config, messages, opts, deadlines, startedAt) {
     throw fail(`${url} returned HTTP ${res.status}. ${detail}`.trim(), cls, res.status);
   }
 
-  let payload;
+  let content, usage = null;
   try {
-    payload = await withDeadline(
-      res.json(),
-      deadlines.bodyTimeoutMs,
-      () => fail(
-        `Headers arrived but the body did not complete within ${deadlines.bodyTimeoutMs}ms.`,
-        TRANSIENT
-      )
-    );
+    ({ content, usage } = await consumeStream(res, opts, deadlines, fail));
   } catch (e) {
     if (e instanceof LlmUnavailable) throw e;
-    throw fail(`Response from ${url} was not JSON: ${e.message}`, TRANSIENT, res.status, e);
+    throw fail(`Reading the stream from ${url} failed: ${e.message}`, TRANSIENT, res.status, e);
   }
 
-  const content = payload?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) {
-    // Shape, not transport. A 200 with nothing usable means the endpoint is
-    // not the API we assumed, which no amount of retrying corrects.
+    // Shape, not transport. A 200 that streams nothing usable means the
+    // endpoint is not the API we assumed, which retrying does not correct.
     throw fail(
-      `${url} answered 200 but with no choices[0].message.content. `
+      `${url} answered 200 but streamed no assistant content. `
       + 'The endpoint may not be OpenAI-compatible.',
       PERSISTENT, res.status
     );
   }
 
-  return { content, usage: payload.usage || null, raw: payload };
+  return { content, usage, raw: null };
 }
 
 /**
@@ -225,8 +304,9 @@ export async function chat(config, messages, options = {}) {
   const deadlines = {
     headerTimeoutMs: options.headerTimeoutMs ?? options.connectTimeoutMs
       ?? DEFAULTS.headerTimeoutMs,
-    bodyTimeoutMs: options.bodyTimeoutMs ?? options.responseTimeoutMs
-      ?? DEFAULTS.bodyTimeoutMs
+    stallTimeoutMs: options.stallTimeoutMs ?? options.bodyTimeoutMs
+      ?? options.responseTimeoutMs ?? DEFAULTS.stallTimeoutMs,
+    totalTimeoutMs: options.totalTimeoutMs ?? DEFAULTS.totalTimeoutMs
   };
   const maxRetries = options.maxRetries ?? DEFAULTS.maxRetries;
   const backoffMs = options.backoffMs ?? DEFAULTS.backoffMs;
