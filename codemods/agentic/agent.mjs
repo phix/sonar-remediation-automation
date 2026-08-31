@@ -60,6 +60,13 @@ export async function attemptFix(finding, ctx, priorRejections = []) {
             ? `${head}\nThe gate's output:\n${r.detail.slice(-1200)}`
             : head;
         }).join('\n')
+        // The observed failure loop at temperature 0: a case asserting wrong
+        // behaviour of an UNCHANGED function, repeated verbatim every retry
+        // because the model cannot repair arithmetic it guessed. Deleting the
+        // case is within its reach; say so, or the retry budget buys nothing.
+        + '\nIf a failing case tests a function you did NOT change, DELETE that case '
+        + 'rather than guessing that function\'s behaviour again. A smaller test that '
+        + 'is right beats a broader one that is wrong.'
     });
   }
 

@@ -150,7 +150,14 @@ export async function main(argv) {
     console.log(`wrote ${r.finding.file} and ${r.testPath}`);
   }
 
-  return summary.accepted === summary.considered ? 0 : 1;
+  // Rejections are the gate WORKING, not the loop breaking, and they must not
+  // starve the push: exit 1 here fails the workflow step, which skips the
+  // commit — so one stubborn finding would keep every deterministic fix and
+  // every accepted agentic fix off the branch forever. The Sonar gate on the
+  // re-scan is what stays red about unresolved findings; this exit code is
+  // about whether the LOOP ran. Infra failures still fail it, because a model
+  // that was never reachable is a broken loop, not a judged proposal.
+  return summary.infraFailures === 0 ? 0 : 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

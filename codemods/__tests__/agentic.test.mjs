@@ -409,6 +409,10 @@ describe('the model is never trusted, only used', () => {
     const second = JSON.parse(f.calls[1].init.body);
     expect(second.messages.at(-1).content).toMatch(/rejected at gate "testDiscriminates"/);
     expect(second.messages.at(-1).content).toMatch(/The gate's output:\nFAIL/);
+    // At temperature 0 the only lever a retry has is its instruction, and the
+    // observed loop was a wrong guess about an unchanged function repeated
+    // verbatim. The escape hatch must be stated, or the budget buys nothing.
+    expect(second.messages.at(-1).content).toMatch(/DELETE that case/);
   });
 
   // The summary said "0 tokens" for a run that made four real model calls:
