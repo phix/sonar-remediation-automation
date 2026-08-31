@@ -219,3 +219,39 @@ were arguing with a prompt they could not fully see. Role-named so a future
 requant is an ollama-side edit, not a workflow PR. Streaming stays mandatory
 for the same reasons as ever; at 50 tok/s the stall detector simply gets less
 to do.
+
+## Fourth and final correction, 2026-08-31 late: the q3 14b only fit
+## SHALLOWLY, and the survivor is qwen3:8b
+
+The 53.6 tok/s above was measured on a 39-token prompt. Real remediation
+prompts are ~3–6k tokens, and there the q3 14b collapsed: **69s prefill and
+3.2 tok/s** on a 5k-token probe, because Ollama's fit accounting counts its
+own allocation and not what Windows already holds on the card — the deep end
+of the KV cache, exactly where long prompts live, sat in spilled memory.
+Dry run 33432556554's attempts still took 7–10 minutes and the step hit its
+45-minute timeout ten milliseconds after finishing its work. **"100% GPU" in
+`/api/ps` is not evidence of fitting; only a deep-context probe is.**
+
+The elimination, identical 5k-prompt probes and dry runs on the same two
+findings (`summary.js:39` S4144 — the quality bar — and `:65` S3776):
+
+| resident | fits ~8 GB truly usable? | at depth | verdict |
+|---|---|---|---|
+| qwen2.5-coder 14b q4 | no | 2.9 tok/s | quality yes, unusably slow |
+| qwen2.5-coder 14b q3 | at rest, not at depth | 3.2 tok/s | accepted `:39` twice; 45-min timeouts |
+| qwen2.5-coder 7b | yes, ~3 GB spare | 91 tok/s | **0 accepted** — wrong test expectations, even with full context (run 33437464397: its old 0-of-2 was not just truncation) |
+| **qwen3:8b** | yes | 64 tok/s | **`:39` ACCEPTED on attempt 2; agentic step 3m08s** (run 33440267614) |
+
+`sonarfix:latest` (the tag is now role-named without a size) serves qwen3:8b
+with `num_ctx 8192`, `num_predict 2560`, and its **thinking mode force-disabled
+by a patched chat template** — Ollama's `/v1` shim routes qwen3's thinking to a
+`reasoning` field this pipeline never reads, and with thinking on, the entire
+token budget went there and `content` came back empty. The template hack lives
+in the derived tag on tinman, which is where model quirks belong: the workflow
+and the client stayed model-agnostic, and proving a new candidate is a pull,
+a bake, and a dry run — no PR.
+
+Net for the day: the agentic step went **~34 minutes → 3m08s**, and the
+finding filed as a model-capability boundary (`:39`) is now accepted
+repeatably. `--max-attempts` dropped 3 → 2 on the evidence that no third
+attempt ever earned its cost. Streaming stays mandatory, unchanged.
