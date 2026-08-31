@@ -190,3 +190,32 @@ tree where the 7b accepted 0, remediate.yml carries the numbers). The decision
 this document records is unchanged by the correction: streaming stays
 mandatory, because a cold load plus a slow day still has to cross undici's
 300s ceiling somewhere, and a stall is still only observable on a stream.
+
+## Third correction, 2026-08-31 night: the real ceiling was VRAM, and the fix
+## is a quant that fits
+
+The "correction" above was itself half-wrong: one-model-resident was faster
+than contention, but run 33420164274 still spent **~8 minutes per agentic
+attempt**, and probing tinman directly explained why. Measured over the API,
+same 200-token probe throughout:
+
+| model | resident size | fits the card? | measured |
+|---|---|---|---|
+| qwen2.5-coder:7b (q4) | 4.7 GB | yes | **102.4 tok/s** |
+| qwen2.5-coder:14b (q4) | ~10 GB with KV | **no — spills** | **2.9 tok/s** |
+| qwen2.5-coder:14b **q3_K_M**, ctx 8192 | 8.8 GB | yes (fraction 1.00) | **53.6 tok/s** |
+
+The q4 14b overflowed tinman's ~9 GB of usable VRAM into system RAM —
+Windows' sysmem fallback, which Ollama still reports as "100% GPU" — so the
+card ran at PCIe/DDR speeds. The gap between fitting and spilling is ~35x.
+(A detour through serving from the M5 laptop measured 12 tok/s and froze the
+machine under memory pressure; workstation-as-endpoint is rejected twice now.)
+
+The endpoint model is now **`sonarfix:14b`**, a derived tag on tinman:
+qwen2.5-coder 14b at Q3_K_M with `num_ctx 8192` baked in. The context matters
+independently of speed: calls average ~3.5k tokens and the informed retries
+were **silently truncating at Ollama's 4096 default** — some rejected attempts
+were arguing with a prompt they could not fully see. Role-named so a future
+requant is an ollama-side edit, not a workflow PR. Streaming stays mandatory
+for the same reasons as ever; at 50 tok/s the stall detector simply gets less
+to do.
