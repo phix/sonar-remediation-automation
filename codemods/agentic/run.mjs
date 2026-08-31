@@ -23,8 +23,16 @@ import { createWorkspace } from './workspace.mjs';
 import { runAgentic, summarizeAgentic } from './agent.mjs';
 import { configFromEnv } from './client.mjs';
 
-export function renderAgenticReport(run, summary) {
+export function renderAgenticReport(run, summary, deferred = []) {
   const l = ['<!-- sonar-agentic -->', '### Agentic remediation', ''];
+  if (deferred.length) {
+    // Named, not silently dropped. A capped run and an exhaustive one must
+    // never produce the same-looking report, or the cap becomes a way to
+    // claim coverage nobody had.
+    l.push(`**${deferred.length} finding(s) were deferred by \`--max-findings\`** and were `
+      + 'not attempted. They remain unresolved:', '',
+      ...deferred.map((f) => `- \`${f.rule}\` ${f.file}:${f.line}`), '');
+  }
 
   if (!run.ran) {
     l.push(`**This path did not run.** ${run.reason}.`, '',
@@ -59,7 +67,7 @@ export async function main(argv) {
   const findingsFile = args.find((a) => !a.startsWith('--'));
   const at = (flag, dflt) => { const i = args.indexOf(flag); return i >= 0 ? args[i + 1] : dflt; };
   const root = at('--root', '.');
-  if (!findingsFile) { console.error('usage: run.mjs <findings.json> --root DIR'); return 2; }
+  if (!findingsFile) { console.error('usage: run.mjs <findings.json> --root DIR [--max-findings N]'); return 2; }
 
   const findings = JSON.parse(readFileSync(findingsFile, 'utf8'));
   // Dry-run: we only want the routing decision, not the deterministic edits.
@@ -72,20 +80,37 @@ export async function main(argv) {
   }
   console.log(`${needsAgent.length} finding(s) with no deterministic fixer.`);
 
+  // A demo budget, not a correctness knob. Each finding costs a full
+  // generate-and-verify round trip against a self-hosted 14B -- minutes, not
+  // seconds -- so a ten-finding run is a coffee break and a two-finding run
+  // still shows the whole mechanism.
+  //
+  // The findings NOT taken are reported as deferred, never dropped silently.
+  // A capped run and an exhaustive run must not produce the same-looking
+  // output, or the cap becomes a way to claim coverage nobody had.
+  const maxFindings = Number(at('--max-findings', '0')) || 0;
+  let deferred = [];
+  let selected = needsAgent;
+  if (maxFindings > 0 && needsAgent.length > maxFindings) {
+    selected = needsAgent.slice(0, maxFindings);
+    deferred = needsAgent.slice(maxFindings);
+    console.log(`--max-findings ${maxFindings}: taking ${selected.length}, deferring ${deferred.length}.`);
+  }
+
   const cfg = configFromEnv();
   if (!cfg.configured) {
     // Report loudly and exit red. A pipeline that quietly skipped its only
     // model-backed stage would report the same green as one that ran it.
     const run = { ran: false, reason: `the agentic path is not configured: ${cfg.missing.join(', ')} unset`,
-      inScope: needsAgent, outOfScope: [], alarms: [], results: [] };
-    const report = renderAgenticReport(run, summarizeAgentic(run));
+      inScope: selected, outOfScope: [], alarms: [], results: [] };
+    const report = renderAgenticReport(run, summarizeAgentic(run), deferred);
     writeFileSync('agentic-comment.md', report);
     console.log(`\n${run.reason}`);
     console.log(`${needsAgent.length} finding(s) left open. Set LLM_BASE_URL, LLM_MODEL and LLM_API_KEY to run it.`);
     return 1;
   }
 
-  const rules = await fetchRules(needsAgent.map((f) => f.rule), {
+  const rules = await fetchRules(selected.map((f) => f.rule), {
     org: process.env.SONAR_ORG || 'phix',
     token: process.env.SONAR_TOKEN_READ || process.env.SONAR_TOKEN
   });
@@ -96,7 +121,7 @@ export async function main(argv) {
   const workspace = createWorkspace(root);
   let run;
   try {
-    run = await runAgentic(needsAgent, {
+    run = await runAgentic(selected, {
       root,
       workspace,
       config: cfg,
@@ -110,9 +135,11 @@ export async function main(argv) {
 
   const summary = summarizeAgentic(run);
   console.log('\n', JSON.stringify(summary, null, 2));
-  writeFileSync('agentic-comment.md', renderAgenticReport(run, summary));
+  writeFileSync('agentic-comment.md', renderAgenticReport(run, summary, deferred));
   const jsonOut = at('--json', null);
-  if (jsonOut) writeFileSync(jsonOut, JSON.stringify({ summary, results: run.results }, null, 2));
+  if (jsonOut) writeFileSync(jsonOut, JSON.stringify(
+    { summary, deferred: deferred.map((f) => ({ rule: f.rule, file: f.file, line: f.line })), results: run.results },
+    null, 2));
 
   // Accepted fixes are written back into the real tree; the workflow commits.
   for (const r of run.results.filter((x) => x.accepted)) {

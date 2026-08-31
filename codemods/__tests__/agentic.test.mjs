@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { chat, configFromEnv, LlmUnavailable, TRANSIENT, PERSISTENT, DEFAULTS } from '../agentic/client.mjs';
 import { checkScope, partitionByScope, AGENTIC_RULES } from '../agentic/scope.mjs';
+import { renderAgenticReport } from '../agentic/run.mjs';
 import { parseProposal, buildPrompt } from '../agentic/proposal.mjs';
 import { admissible, stubSymbol } from '../agentic/validate.mjs';
 import { fixOne, runAgentic, summarizeAgentic } from '../agentic/agent.mjs';
@@ -106,6 +107,28 @@ describe('the client cannot hang and always classifies', () => {
     expect(err.classification).toBe(PERSISTENT);
     expect(err.message).toMatch(/OpenAI-compatible/);
     expect(f.calls.length).toBe(1);
+  });
+
+  // --max-findings is a demo budget. The danger is that a capped run and an
+  // exhaustive run look identical, which would turn the cap into a way to
+  // claim coverage nobody had.
+  it('names every deferred finding in the report instead of dropping it', () => {
+    const run = { ran: true, inScope: [], outOfScope: [], alarms: [], results: [] };
+    const deferred = [
+      { rule: 'typescript:S3776', file: 'web/src/a.ts', line: 12 },
+      { rule: 'typescript:S3358', file: 'web/src/b.ts', line: 40 }
+    ];
+    const md = renderAgenticReport(run, summarizeAgentic(run), deferred);
+    expect(md).toMatch(/2 finding\(s\) were deferred/);
+    expect(md).toMatch(/web\/src\/a\.ts:12/);
+    expect(md).toMatch(/web\/src\/b\.ts:40/);
+    expect(md).toMatch(/remain unresolved/);
+  });
+
+  it('says nothing about deferrals when nothing was deferred', () => {
+    const run = { ran: true, inScope: [], outOfScope: [], alarms: [], results: [] };
+    expect(renderAgenticReport(run, summarizeAgentic(run), [])).not.toMatch(/deferred/);
+    expect(renderAgenticReport(run, summarizeAgentic(run))).not.toMatch(/deferred/);
   });
 
   it('separates missing configuration from a down endpoint', () => {
