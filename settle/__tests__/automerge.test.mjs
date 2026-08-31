@@ -26,6 +26,10 @@ describe('runAutoMerge — the tri-state pattern (mirrors jira/run.mjs)', () => 
     const result = await runAutoMerge(RED, PR, { enabled: true, config: CONFIGURED, call });
     expect(result.ran).toBe(false);
     expect(result.reason).toMatch(/red/i);
+    // The reason names the classification, never the gate: a run can classify
+    // red with the gate OK (undetermined inputs), and sandbox PR #3's verdict
+    // rendered "Quality gate | OK" beside "the quality gate is red" for it.
+    expect(result.reason).not.toMatch(/quality gate/i);
     expect(call).not.toHaveBeenCalled();
   });
 

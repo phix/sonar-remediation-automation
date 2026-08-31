@@ -181,3 +181,12 @@ The three deadlines now mean three different things:
 
 And the model is now **7b**. 14b is not viable on this hardware for this prompt
 shape, which asks for a corrected file plus a test.
+
+**Correction, later on 2026-08-31: the speed table above measured contention,
+not the hardware.** With both models resident at once, tinman crawled; with one
+loaded, the SAME endpoint served 7b *and* 14b calls in **~15–30s each**, from
+CI and from the LAN, and the model is now **14b** (it accepted 1 of 2 on the
+tree where the 7b accepted 0, remediate.yml carries the numbers). The decision
+this document records is unchanged by the correction: streaming stays
+mandatory, because a cold load plus a slow day still has to cross undici's
+300s ceiling somewhere, and a stall is still only observable on a stream.

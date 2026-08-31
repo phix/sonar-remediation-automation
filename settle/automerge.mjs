@@ -109,12 +109,17 @@ export async function enableAutoMerge(pr, { call, mergeMethod = 'SQUASH' } = {})
 export async function runAutoMerge(classification, pr, {
   enabled = false, config = configFromEnv(), call, mergeMethod, log = () => {}
 } = {}) {
-  // The non-negotiable guard: no path below this line can run when the gate
-  // is not ready, regardless of what `enabled` says.
+  // The non-negotiable guard: no path below this line can run when the
+  // classification is not ready, regardless of what `enabled` says.
+  //
+  // The reason names the CLASSIFICATION, not the gate: a run can classify red
+  // with the gate OK — sandbox PR #3's settle verdict rendered
+  // "Quality gate | OK" beside "the quality gate is red" because this line
+  // blamed the wrong input for an undetermined (missing-dispositions) red.
   if (!classification || classification.state !== 'ready') {
     return {
       ran: false, disabled: false,
-      reason: 'the quality gate is red; auto-merge never fires on a red classification.'
+      reason: 'the run classified red, and auto-merge only ever fires on a ready classification.'
     };
   }
   if (!enabled) {
