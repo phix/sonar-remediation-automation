@@ -32,8 +32,14 @@ export const DEFAULT_MAX_PROPOSAL_ATTEMPTS = 2;   // spec §15
 export async function attemptFix(finding, ctx, priorRejections = []) {
   const { root, source, rule, config, workspace, llm = {}, log = () => {} } = ctx;
 
-  const target = testPathFor(finding.file);
-  if (!target) return reject('admissible', `no test location is defined for ${finding.file}`);
+  const base = testPathFor(finding.file);
+  if (!base) return reject('admissible', `no test location is defined for ${finding.file}`);
+  // Not the deterministic path's file. Both paths test the same source file,
+  // and the model returns a WHOLE test file — sharing the name means an
+  // accepted proposal silently replaces the committed characterization tests
+  // for every deterministic fix in that file (observed: -46 lines on the
+  // first 14b acceptance). Separate files, both in the suite's include glob.
+  const target = { ...base, path: base.path.replace('.generated.', '.agentic.') };
 
   const j = apiFor(finding.file);
   let enclosing = null;

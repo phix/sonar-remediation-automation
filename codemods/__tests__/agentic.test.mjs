@@ -349,6 +349,10 @@ describe('the model is never trusted, only used', () => {
     expect(r.accepted).toBe(true);
     expect(r.enclosing).toBe('pick');
     expect(r.test).toBeTruthy();
+    // Its own file, not the deterministic path's: the model returns a WHOLE
+    // test file, so sharing the name would replace the committed
+    // characterization tests for every deterministic fix in that source file.
+    expect(r.testPath).toBe('web/src/app/orders/order-stats.agentic.spec.ts');
   });
 
   it('rejects a test that still passes with the fixed function stubbed out', async () => {
