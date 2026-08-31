@@ -1,6 +1,6 @@
 # sonar-remediation-automation
 
-Automated discovery, planning, remediation, and verification of SonarQube findings via GitHub Actions — with Jira as the human workflow surface and Microsoft Teams as the feedback channel.
+Automated discovery, planning, remediation, and verification of SonarQube findings via GitHub Actions — with Jira as the human workflow surface and Telegram as the feedback channel.
 
 A reference implementation built on a synthetic sandbox ([`phix/sonar-sandbox-app`](https://github.com/phix/sonar-sandbox-app)), designed to be abstracted and adopted internally.
 
@@ -28,12 +28,12 @@ PR opened or updated  (same-repo only — forks skipped with a non-green status)
     → push       commit lands on the PR branch → re-scan fires (capped)
     → settle     green → OPTIONAL auto-merge, default OFF
                  red   → merge stays blocked
-    → notify     OPTIONAL, default OFF — ONE Teams message at the terminal
+    → notify     OPTIONAL, default OFF — ONE Telegram message at the terminal
                  state: "ready", or "red because <deterministic reason>"
     → reset      one click back to the pristine baseline
 ```
 
-`jira`, `teams_notify` and `auto_merge` all default to `false`, so the
+`jira`, `telegram_notify` and `auto_merge` all default to `false`, so the
 out-of-the-box pipeline is silent and does not merge. The experience above is
 the switches-on configuration; the defaults are safe, not complete.
 
@@ -53,8 +53,8 @@ so the merge is genuinely blocked rather than merely reported — red on new-cod
 coverage, with all three ratings at A
 ([why that is not a smell problem](docs/decisions/coverage-and-the-gate.md)).
 
-`remediate`, the Jira step, the settle stage and the Teams library are built and
-unit-proven; none has yet run in CI. Catalogue proven against a live Sonar scan:
+`remediate`, the Jira step, the settle stage and the Telegram library are built
+and unit-proven; the notify step has not yet delivered from CI. Catalogue proven against a live Sonar scan:
 32 findings, 16 groups.
 
 The settle stage composes end to end against the live Sonar API: the PR's real

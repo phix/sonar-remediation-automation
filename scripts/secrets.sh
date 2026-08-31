@@ -9,10 +9,10 @@
 # To load them into a shell for a run:
 #   eval "$(./scripts/secrets.sh export)"
 #
-# Keys: jira-api-token jira-user-email sonar-token sonar-token-read teams-webhook-url
+# Keys: jira-api-token jira-user-email sonar-token sonar-token-read telegram-bot-token telegram-chat-id
 set -euo pipefail
 SERVICE=sonar-remediation
-KEYS="jira-api-token jira-user-email sonar-token sonar-token-read teams-webhook-url"
+KEYS="jira-api-token jira-user-email sonar-token sonar-token-read telegram-bot-token telegram-chat-id"
 
 var_for() { echo "$1" | tr 'a-z-' 'A-Z_'; }
 

@@ -1,6 +1,6 @@
 # Sonar Remediation Sandbox — Implementation Plan
 
-**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · settle stage (`settle/`), Teams library (`teams/`) and the reset verifier (`scripts/verify-reset.mjs`) landed 2026-08-30, all unit-proven and none yet run in CI · #2 has its library half but still needs the Power Automate webhook proven by hand · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
+**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · settle stage (`settle/`), notification library (`telegram/` — Teams descoped 2026-08-31 on the M365 licensing wall, see `docs/decisions/notify-telegram-not-teams.md`) and the reset verifier (`scripts/verify-reset.mjs`) landed, all unit-proven · #2 has its library half but still needs a live send proven by hand · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
 **Owner:** Nick Ratliff (`phix`) · **Feedback channel:** Microsoft Teams
 
 ---
@@ -40,7 +40,7 @@ PR opened or updated  (same-repo only — forks skipped with a non-green status)
 | Input | Default | What it adds |
 |---|---|---|
 | `jira` | `false` | Jira tickets |
-| `teams_notify` | `false` | the terminal Teams message |
+| `telegram_notify` | `false` | the terminal Telegram message |
 | `auto_merge` | `false` | merge the PR when the gate goes green |
 
 **Off by default means the out-of-the-box pipeline is silent and does not merge** — it scans, fixes, pushes and stops. That is the right default, and it means the experience above is the *switches-on* configuration. The defaults are safe, not complete.

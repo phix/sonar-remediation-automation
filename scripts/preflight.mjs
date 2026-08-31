@@ -133,7 +133,7 @@ secrets.delete('GITHUB_TOKEN');
 // "$X" ]`) would make the answer depend on how a step happened to be written.
 // The workflow says so out loud:
 //
-//   # preflight: optional-secret TEAMS_WEBHOOK_URL
+//   # preflight: optional-secret TELEGRAM_BOT_TOKEN
 const optionalSecrets = new Set(
   [...rawWorkflow.matchAll(/#\s*preflight:\s*optional-secret\s+([A-Z0-9_]+)/g)].map((m) => m[1])
 );

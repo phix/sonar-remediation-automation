@@ -234,3 +234,13 @@ Two properties of this flow travel better than the campaign model did:
 The thing that travels worst is step 6, and the office needs to hear the constraint early rather than discover it: **this flow only works on same-repo pull requests.** That is fine, and usually invisible, for internal teams working on branches of the repository itself. It breaks completely for any repository that takes contributions from forks — open source, cross-org, or contractors without write access.
 
 Do not let anyone "solve" that with `pull_request_target`. The reasoning is in decision 6, and it is the single most likely place for a well-meaning adopter to introduce a credential-disclosure bug while believing they are extending coverage. If a repository genuinely needs fork support, the answer is a separate, deliberately designed flow with no secrets in the untrusted context — not a trigger swap.
+
+---
+
+**Correction, 2026-08-31: the notification channel is Telegram, not Teams.**
+Everywhere this document says `teams_notify` or "Teams message", read
+`telegram_notify` / "Telegram message" — the flag's tri-state semantics and
+default are unchanged. Teams was descoped on the M365 licensing wall, not on
+any property of this flow; the reasoning and the swap's mechanics are in
+[`notify-telegram-not-teams.md`](notify-telegram-not-teams.md). The office
+handoff can swap it back through the same seam.

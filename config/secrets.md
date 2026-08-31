@@ -35,7 +35,8 @@ Where every credential lives, and why it lives there. **No secret values appear 
 | `JIRA_API_TOKEN` | [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens) — **classic, unscoped** | plan + retry workflows |
 | `SONAR_TOKEN` | SonarQube Cloud → My Account → Security | the scan action |
 | `SONAR_TOKEN_READ` | as above, separate token | recon (least privilege, spec §18.2) |
-| `TEAMS_WEBHOOK_URL` | Power Automate Workflows (issue #2) | every workflow's status gate |
+| `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/botfather) → `/newbot` (issue #2 — Teams descoped, see `docs/decisions/notify-telegram-not-teams.md`) | the settle notify step |
+| `TELEGRAM_CHAT_ID` | `getUpdates` after messaging the bot once — numeric, useless without the token, but kept alongside it so one pattern covers both | the settle notify step |
 | `SANDBOX_REPO_TOKEN` | fine-grained PAT or GitHub App (issue #7) | cross-repo branch + PR |
 
 **Two Sonar tokens, deliberately.** The scanner must submit analysis; recon only reads issues. One token doing both is a privilege the recon job never needs, and the verification script probes whether the read token is genuinely read-only.
@@ -84,11 +85,10 @@ Verified 2026-08-29 that the current `gh` token can set and delete both secrets 
 
 ## What is not obtainable yet
 
-Three of these cannot exist until earlier tickets land. They are gated, not forgotten — `sync-secrets.sh` skips anything unset, so re-run it as each becomes available.
+Some of these cannot exist until earlier tickets land. They are gated, not forgotten — `sync-secrets.sh` skips anything unset, so re-run it as each becomes available.
 
 | Secret | Blocked on |
 |---|---|
-| `TEAMS_WEBHOOK_URL` | issue #2 — the Power Automate flow does not exist yet |
 | `SONAR_PROJECT_KEY` | issue #10 — no SonarCloud project until the sandbox repo is imported |
 | `SANDBOX_REPO_TOKEN` | issue #7 — the sandbox repo does not exist yet |
 
