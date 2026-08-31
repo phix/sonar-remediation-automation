@@ -43,7 +43,12 @@ export const SYSTEM_PROMPT = [
   '2. Every exported name keeps its name and its signature. Callers are not in scope.',
   '3. You edit ONE file: the one you are given. No new modules, no imports of packages',
   '   that are not already imported somewhere in the file.',
-  '4. You write exactly ONE test file, and its cases must call the function you changed.',
+  '4. You write exactly ONE test file, and its cases must call the function you changed —',
+  '   ONLY that function. No cases for functions you did not change: every extra case is',
+  '   an extra way for a wrong guess about their behaviour to sink a correct fix.',
+  '   It runs under vitest with globals OFF: start it with',
+  "   import { describe, it, expect } from 'vitest';",
+  '   or it dies on ReferenceError before a single case runs.',
   '   A test that would still pass if that function returned undefined is worthless and',
   '   will be rejected.',
   '5. No comments explaining that you fixed a Sonar issue. The commit message says that.'
@@ -88,6 +93,24 @@ function unfence(text) {
 }
 
 /**
+ * The other tic: jest-style globals. The sandbox runs vitest with globals OFF,
+ * so a test that never imports describe/it/expect dies on ReferenceError
+ * before its first case — every rejection in run 33349355864 was this, and
+ * putting the contract in the prompt still lost 3 attempts of 4. Same class
+ * as the fences above, so it gets the same treatment: repaired mechanically,
+ * and the gates judge the test's substance rather than its idiom.
+ */
+const VITEST_HELPERS = ['describe', 'it', 'test', 'expect',
+  'beforeEach', 'afterEach', 'beforeAll', 'afterAll', 'vi'];
+
+export function ensureVitestImports(test) {
+  if (/from\s+['"]vitest['"]/.test(test)) return test;
+  const used = VITEST_HELPERS.filter((n) => new RegExp(`\\b${n}\\s*[.(]`).test(test));
+  if (!used.length) return test;
+  return `import { ${used.join(', ')} } from 'vitest';\n${test}`;
+}
+
+/**
  * @returns {{ok: true, fix: string, test: string} | {ok: false, reason: string}}
  * A malformed reply is a rejected attempt, not a crash — it costs a retry and
  * the reason is logged, which is exactly what the retry cap is for.
@@ -106,7 +129,7 @@ export function parseProposal(content) {
 
   if (!fix) return { ok: false, reason: 'the fix section is empty' };
   if (!test) return { ok: false, reason: 'the test section is empty' };
-  return { ok: true, fix, test };
+  return { ok: true, fix, test: ensureVitestImports(test) };
 }
 
 export const MARKERS = { FIX, TEST, END };

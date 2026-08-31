@@ -47,11 +47,19 @@ export async function attemptFix(finding, ctx, priorRejections = []) {
   });
   if (priorRejections.length) {
     // Spec §15: retry context carries the prior failure so the second attempt
-    // is informed rather than merely another sample.
+    // is informed rather than merely another sample. The gate's captured
+    // output rides along, not just the verdict line: run 33349355864 proved
+    // the line alone teaches nothing — "the test does not pass" hid a
+    // ReferenceError, and the model repeated it verbatim on every retry.
     messages.push({
       role: 'user',
       content: 'A previous attempt was rejected by an automated gate. Do not repeat it.\n'
-        + priorRejections.map((r, i) => `Attempt ${i + 1} rejected at gate "${r.gate}": ${r.reason}`).join('\n')
+        + priorRejections.map((r, i) => {
+          const head = `Attempt ${i + 1} rejected at gate "${r.gate}": ${r.reason}`;
+          return typeof r.detail === 'string' && r.detail
+            ? `${head}\nThe gate's output:\n${r.detail.slice(-1200)}`
+            : head;
+        }).join('\n')
     });
   }
 
@@ -135,6 +143,17 @@ export async function fixOne(finding, ctx) {
   const rejections = [];
   const log = ctx.log || (() => {});
 
+  // Every attempt is paid for, accepted or not. A rejection that cost 2800
+  // tokens and reports 0 makes the run's bill unfalsifiable — the summary said
+  // "0 tokens" for a run that made four real model calls.
+  const spent = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+  const pay = (u) => {
+    if (!u) return;
+    spent.prompt_tokens += u.prompt_tokens || 0;
+    spent.completion_tokens += u.completion_tokens || 0;
+    spent.total_tokens += u.total_tokens || 0;
+  };
+
   for (let n = 1; n <= max; n++) {
     let verdict;
     try {
@@ -145,14 +164,16 @@ export async function fixOne(finding, ctx) {
         return {
           finding, accepted: false, infra: true,
           ...e.toTerminalState(),
-          rejections
+          rejections,
+          usage: spent
         };
       }
       throw e;
     }
+    pay(verdict.usage);
     if (verdict.ok) {
       log(`  ${finding.rule} ${finding.file}:${finding.line} — ACCEPTED on attempt ${n}`);
-      return { finding, accepted: true, attempt: n, rejections, ...verdict };
+      return { finding, accepted: true, attempt: n, rejections, ...verdict, usage: spent };
     }
     rejections.push({ gate: verdict.gate, reason: verdict.reason, detail: verdict.detail });
     log(`  ${finding.rule} ${finding.file}:${finding.line} — rejected at "${verdict.gate}": ${verdict.reason}`);
@@ -166,7 +187,8 @@ export async function fixOne(finding, ctx) {
         : 'ambiguous_root_cause',
     summary: `${max} proposals were rejected; the last at "${rejections.at(-1).gate}".`,
     humanAction: 'Fix by hand, or add a deterministic codemod for this rule so it stops costing a call.',
-    rejections
+    rejections,
+    usage: spent
   };
 }
 

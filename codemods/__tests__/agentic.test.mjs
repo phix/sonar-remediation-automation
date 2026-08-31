@@ -3,7 +3,7 @@ import { chat, configFromEnv, LlmUnavailable, TRANSIENT, PERSISTENT, DEFAULTS } 
 import { checkScope, partitionByScope, AGENTIC_RULES } from '../agentic/scope.mjs';
 import { renderAgenticReport } from '../agentic/run.mjs';
 import { parseProposal, buildPrompt } from '../agentic/proposal.mjs';
-import { admissible, stubSymbol } from '../agentic/validate.mjs';
+import { admissible, stubSymbol, tail } from '../agentic/validate.mjs';
 import { fixOne, runAgentic, summarizeAgentic } from '../agentic/agent.mjs';
 import { supportedRules } from '../registry.mjs';
 
@@ -257,6 +257,50 @@ describe('reading the answer back', () => {
     expect(msgs[1].content).toMatch(/2\| const b/);
     expect(msgs[0].content).toMatch(/Behaviour is preserved exactly/);
   });
+
+  // Regression, run 33349355864: all four proposals died on
+  // "ReferenceError: describe is not defined". The sandbox runs bare vitest
+  // with no globals, the prompt never said so, and a jest-shaped test never
+  // loads there. The contract belongs in the prompt, not in folklore.
+  it('tells the model the test framework contract, not just where the file goes', () => {
+    const msgs = buildPrompt({
+      finding: { rule: 'javascript:S4144', file: 'api/src/a.js', line: 2 },
+      source: 'export const a = 1;\n',
+      rule: { available: false },
+      testPath: 'api/test/a.generated.test.js', importPath: '../src/a.js', enclosing: 'a'
+    });
+    expect(msgs[0].content).toMatch(/import \{ describe, it, expect \} from/);
+    expect(msgs[0].content).toMatch(/vitest/);
+  });
+
+  // Telling it was not enough: with the contract in the prompt the 7b still
+  // opened with a bare `describe` in 3 of 4 attempts. Same class of tic as
+  // the fences unfence() strips, so it gets the same treatment — a mechanical
+  // repair at the parse seam, and the gates judge substance instead of idiom.
+  it('prepends the vitest import a jest-shaped test forgot', () => {
+    const p = parseProposal('===FIX===\nconst a=1\n===TEST===\n'
+      + 'import { f } from "./f.js";\ndescribe("f", () => {\n  it("works", () => {\n'
+      + '    expect(f()).toBe(1);\n  });\n});\n===END===');
+    expect(p.ok).toBe(true);
+    expect(p.test).toMatch(/^import \{ describe, it, expect \} from 'vitest';\n/);
+  });
+
+  it('leaves a test that already imports from vitest alone', () => {
+    const body = "import { describe, it, expect } from 'vitest';\ndescribe('x', () => {});\n";
+    const p = parseProposal(`===FIX===\nconst a=1\n===TEST===\n${body}===END===`);
+    expect(p.test).toBe(body.trim());
+  });
+
+  it('imports only the helpers the test actually uses, vi included', () => {
+    const p = parseProposal('===FIX===\nconst a=1\n===TEST===\n'
+      + 'test("t", () => {\n  vi.useFakeTimers();\n  expect(1).toBe(1);\n});\n===END===');
+    expect(p.test.split('\n')[0]).toBe("import { test, expect, vi } from 'vitest';");
+  });
+
+  it('does not touch a test that uses no test helpers at all', () => {
+    const p = parseProposal('===FIX===\nconst a=1\n===TEST===\nconsole.log("not a test")\n===END===');
+    expect(p.test).toBe('console.log("not a test")');
+  });
 });
 
 // A workspace that answers however the test needs, without touching a disk or
@@ -351,6 +395,46 @@ describe('the model is never trusted, only used', () => {
     });
     const second = JSON.parse(f.calls[1].init.body);
     expect(second.messages.at(-1).content).toMatch(/rejected at gate "build"/);
+    // The gate's captured output, not only its verdict. Run 33349355864:
+    // "the test does not pass" hid a ReferenceError, so every retry repeated it.
+    expect(second.messages.at(-1).content).toMatch(/The gate's output:\nbuild broke/);
+  });
+
+  it('feeds the failing test output back, so a loading crash is learnable', async () => {
+    const f = fakeFetch([() => ok(`===FIX===\n${GOOD_FIX}\n===TEST===\nx\n===END===`)]);
+    await fixOne(FINDING, {
+      ...base, workspace: fakeWorkspace({ testOnFix: false }),
+      llm: { ...NO_WAIT, fetchImpl: f }, maxProposalAttempts: 2
+    });
+    const second = JSON.parse(f.calls[1].init.body);
+    expect(second.messages.at(-1).content).toMatch(/rejected at gate "testDiscriminates"/);
+    expect(second.messages.at(-1).content).toMatch(/The gate's output:\nFAIL/);
+  });
+
+  // The summary said "0 tokens" for a run that made four real model calls:
+  // rejected attempts carried usage that fixOne dropped on the floor. Every
+  // attempt is paid for, accepted or not, and the bill must say so.
+  it('accounts tokens for rejected attempts, not only accepted ones', async () => {
+    const r = await fixOne(FINDING, {
+      ...base, workspace: fakeWorkspace({ testOnFix: false }),
+      llm: { ...NO_WAIT, ...llmReturning(GOOD_FIX) }, maxProposalAttempts: 2
+    });
+    expect(r.accepted).toBe(false);
+    expect(r.usage.total_tokens).toBe(84);   // 42 per attempt, twice
+    const run = { ran: true, inScope: [FINDING], outOfScope: [], alarms: [], results: [r] };
+    expect(summarizeAgentic(run).tokens).toBe(84);
+  });
+
+  it('accounts every attempt behind an acceptance, not just the last', async () => {
+    let n = 0;
+    const f = fakeFetch([() => (++n === 1
+      ? ok('malformed on purpose')
+      : ok(`===FIX===\n${GOOD_FIX}\n===TEST===\nimport { pick } from "./order-stats";\ntest("t", () => {});\n===END===`))]);
+    const r = await fixOne(FINDING, {
+      ...base, workspace: fakeWorkspace(), llm: { ...NO_WAIT, fetchImpl: f }, maxProposalAttempts: 2
+    });
+    expect(r.accepted).toBe(true);
+    expect(r.usage.total_tokens).toBe(84);   // the rejected first attempt still cost 42
   });
 
   it('reaches a red terminal state with an infra class when the endpoint is unreachable', async () => {
@@ -414,6 +498,16 @@ describe('admissibility', () => {
     });
     expect(v.ok).toBe(true);
     expect(v.detail.gained).toContain('inner/function/1');
+  });
+});
+
+describe('what a gate captures is text, not a terminal', () => {
+  it('strips colour codes, so artifacts, comments and retry prompts stay readable', () => {
+    expect(tail('\u001b[31m\u001b[1mFAIL\u001b[22m\u001b[39m api/test/x.test.js')).toBe('FAIL api/test/x.test.js');
+  });
+
+  it('keeps only the last n lines', () => {
+    expect(tail('a\nb\nc\nd', 2)).toBe('c\nd');
   });
 });
 

@@ -143,7 +143,11 @@ export function runner({ cwd, timeoutMs = 300_000, env = process.env } = {}) {
   });
 }
 
-/** Last 40 lines — enough to see the failure, short enough to put in a comment. */
+/**
+ * Last 40 lines — enough to see the failure, short enough to put in a comment.
+ * Colour codes are stripped: everything that reads this — the JSON artifact,
+ * the PR comment, the retry prompt — treats it as text, not a terminal.
+ */
 export function tail(text, n = 40) {
-  return String(text || '').trimEnd().split('\n').slice(-n).join('\n');
+  return String(text || '').replace(/\u001b\[[0-9;]*m/g, '').trimEnd().split('\n').slice(-n).join('\n');
 }
