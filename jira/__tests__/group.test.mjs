@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { groupFindings, fingerprint, groupKey, projectLabel, moduleOf } from '../group.mjs';
-import { renderBody, summaryFor, dispositionFor } from '../body.mjs';
+import { groupFindings, fingerprint, groupKey, projectLabel, moduleOf, NEEDS_WORK_LABEL, READY_LABEL } from '../group.mjs';
+import { renderBody, summaryFor, dispositionFor, resolvedComment, verdictComment } from '../body.mjs';
 
 const F = (over = {}) => ({
   rule: 'typescript:S3358', file: 'web/src/app/orders/order-stats.ts',
@@ -54,6 +54,33 @@ describe('the fingerprint has to survive being a Jira label', () => {
     const [g] = groupFindings([F()], { projectKey: 'phix_sonar-sandbox-app' });
     expect(g.labels).toContain('phix_sonar-sandbox-app');
     expect(g.labels).toContain(g.fingerprint);
+  });
+
+  it('labels a freshly-grouped finding needs-work, because that is why the group exists', () => {
+    const [g] = groupFindings([F()], { projectKey: 'p' });
+    expect(g.labels).toContain(NEEDS_WORK_LABEL);
+    expect(g.labels).not.toContain(READY_LABEL);
+  });
+});
+
+describe('the comments that record live outcome, not pipeline progress', () => {
+  it('says a group is resolved once Sonar stops reporting it', () => {
+    const c = resolvedComment({ rule: 'typescript:S3358', module: 'web' }, { prUrl: 'https://x/pull/1' });
+    expect(c).toMatch(/no longer reports/);
+    expect(c).toMatch(/typescript:S3358/);
+    expect(c).toMatch(/marking \*\*Ready\*\*/);
+    expect(c).toMatch(/pull\/1/);
+  });
+
+  it('names the red reason when remediation ran but the gate is still red', () => {
+    const c = verdictComment({}, { state: 'red', reason: 'new-code coverage 6.9 < 80' });
+    expect(c).toMatch(/still red: new-code coverage 6\.9 < 80/);
+  });
+
+  it('says the gate is green but this finding survived, when the gate passed anyway', () => {
+    const c = verdictComment({}, { state: 'ready' });
+    expect(c).toMatch(/gate is green/);
+    expect(c).toMatch(/still reported/);
   });
 });
 

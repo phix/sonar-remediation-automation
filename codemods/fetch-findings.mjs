@@ -1,19 +1,29 @@
 /**
- * Fetch the PR-scoped findings and write them in the shape the remediation
- * engine expects: { rule, file, line }.
+ * Fetch findings and write them in the shape the remediation engine expects:
+ * { rule, file, line }.
  *
  * Reads anonymously — the sandbox project is public — so this needs no token
  * and works in a job that has none. SONAR_TOKEN is used when present.
  *
- * Usage: node .github/scripts/fetch-findings.mjs <projectKey> <pr> <out.json>
+ * Scoped to a pull request by default (`<pr>` a bare number), for the entry
+ * point where a PR already exists. `branch:<name>` instead scopes to a
+ * branch — no PR, the shape bulk onboarding needs to see everything already
+ * on `main` before any branch/PR/ticket exists for it at all.
+ *
+ * Usage: node codemods/fetch-findings.mjs <projectKey> <pr|branch:name> <out.json>
  */
 import { writeFileSync } from 'node:fs';
 
-const [projectKey, pr, out] = process.argv.slice(2);
-if (!projectKey || !pr || !out) {
-  console.error('usage: fetch-findings.mjs <projectKey> <pr> <out.json>');
+const [projectKey, prOrBranch, out] = process.argv.slice(2);
+if (!projectKey || !prOrBranch || !out) {
+  console.error('usage: fetch-findings.mjs <projectKey> <pr|branch:name> <out.json>');
   process.exit(2);
 }
+
+const branchMatch = /^branch:(.+)$/.exec(prOrBranch);
+const scopeParam = branchMatch
+  ? `&branch=${encodeURIComponent(branchMatch[1])}`
+  : `&pullRequest=${encodeURIComponent(prOrBranch)}`;
 
 const BASE = (process.env.SONAR_HOST_URL || 'https://sonarcloud.io').replace(/\/$/, '');
 const headers = { Accept: 'application/json' };
@@ -22,7 +32,7 @@ if (process.env.SONAR_TOKEN) headers.Authorization = `Bearer ${process.env.SONAR
 const issues = [];
 for (let page = 1; ; page += 1) {
   const url = `${BASE}/api/issues/search?componentKeys=${encodeURIComponent(projectKey)}`
-    + `&pullRequest=${encodeURIComponent(pr)}&types=CODE_SMELL&statuses=OPEN,CONFIRMED,REOPENED&ps=500&p=${page}`;
+    + `${scopeParam}&types=CODE_SMELL&statuses=OPEN,CONFIRMED,REOPENED&ps=500&p=${page}`;
   const res = await fetch(url, { headers });
   if (!res.ok) { console.error(`GET ${url} -> HTTP ${res.status}`); process.exit(1); }
   const body = await res.json();

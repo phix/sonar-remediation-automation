@@ -67,8 +67,22 @@ function itemFor(group) {
     finding_count: group.findings.length,
     eligibility: { is_eligible: true, reason: 'grouped for ticketing' },
     status: 'Grouped',
-    attempt_count: 0
+    attempt_count: 0,
+    // Populated by recordBranch()/recordPR() as a group moves through the
+    // multi-entry-point flow (docs/decisions/multi-entry-point-flow.md).
+    // null, not absent: a workflow reading this file with `node -e` or `jq`
+    // should never have to distinguish "not yet reached" from "field renamed".
+    branch_name: null,
+    pr_number: null,
+    auto_continue: false
   };
+}
+
+function findOrCreate(plan, group) {
+  const items = plan.items || (plan.items = []);
+  let item = items.find((i) => i.group_fingerprint === group.fingerprint);
+  if (!item) { item = itemFor(group); items.push(item); }
+  return item;
 }
 
 /**
@@ -80,12 +94,61 @@ function itemFor(group) {
  * would widen that window to the length of the whole run.
  */
 export function recordIssueKey(plan, group, issueKey) {
-  const items = plan.items || (plan.items = []);
-  let item = items.find((i) => i.group_fingerprint === group.fingerprint);
-  if (!item) { item = itemFor(group); items.push(item); }
+  const item = findOrCreate(plan, group);
   item.jira_issue_key = issueKey;
   item.status = 'Ticketed';
   return plan;
+}
+
+/** Same immediate-write discipline as recordIssueKey, for the same reason. */
+export function recordBranch(plan, group, branchName) {
+  const item = findOrCreate(plan, group);
+  item.branch_name = branchName;
+  item.status = 'Branched';
+  return plan;
+}
+
+/**
+ * @param {boolean} autoContinue whether this group's PR should be picked up
+ *   automatically once the scan it triggers resolves — read by the
+ *   `workflow_run` watcher, which has no other way to know a human's intent
+ *   from a run days in the past.
+ */
+export function recordPR(plan, group, prNumber, { autoContinue = false } = {}) {
+  const item = findOrCreate(plan, group);
+  item.pr_number = Number(prNumber);
+  item.auto_continue = !!autoContinue;
+  item.status = 'PRed';
+  return plan;
+}
+
+/** A plain status update — 'Remediating', 'Settled-Ready', 'Settled-Red', 'Verified' — with no field to also set. */
+export function recordStatus(plan, item, status) {
+  item.status = status;
+  return plan;
+}
+
+/** `group_fingerprint`, a Jira key, or a PR number — whichever a caller happens to be holding. */
+export function findItem(plan, { fingerprint, jiraKey, pr } = {}) {
+  const items = plan.items || [];
+  if (fingerprint) return items.find((i) => i.group_fingerprint === fingerprint) || null;
+  if (jiraKey) return items.find((i) => i.jira_issue_key === jiraKey) || null;
+  if (pr != null) return items.find((i) => i.pr_number === Number(pr)) || null;
+  return null;
+}
+
+/**
+ * Which of ticket/branch/PR a group is still missing, in the order the flow
+ * creates them. An empty array means all three exist — remediation is the
+ * only stage left, and whether it still NEEDS to run is a live question for
+ * Sonar/the gate to answer, not something this file tries to predict.
+ */
+export function missingStages(item) {
+  const missing = [];
+  if (!item || !item.jira_issue_key) missing.push('ticket');
+  if (!item || !item.branch_name) missing.push('branch');
+  if (!item || !item.pr_number) missing.push('pr');
+  return missing;
 }
 
 export function writePlan(path, plan) {

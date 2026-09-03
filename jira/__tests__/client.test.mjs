@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  API, request, createIssue, searchJql, getIssue, addComment, isOpen,
+  API, request, createIssue, searchJql, getIssue, addComment, updateLabels, isOpen,
   configFromEnv, JiraUnavailable, TRANSIENT, PERSISTENT
 } from '../client.mjs';
 
@@ -168,6 +168,22 @@ describe('"is it finished" has to be asked in a way that ports', () => {
   it('assumes open on an unrecognised shape, so an oddity dedupes rather than duplicates', () => {
     expect(isOpen({})).toBe(true);
     expect(isOpen(null)).toBe(true);
+  });
+});
+
+describe('changing a subset of labels without clobbering the rest', () => {
+  it('sends add/remove ops, not a replacement array', async () => {
+    const { calls, fetchImpl } = recorder([ok({}, 204)]);
+    await updateLabels(CONFIG, 'SONAR-1', { add: ['ready'], remove: ['needs-work'] }, fast({ fetchImpl }));
+    expect(calls[0].init.method).toBe('PUT');
+    expect(calls[0].url).toContain('/issue/SONAR-1');
+    expect(calls[0].body).toEqual({ update: { labels: [{ add: 'ready' }, { remove: 'needs-work' }] } });
+  });
+
+  it('skips the request entirely when there is nothing to add or remove', async () => {
+    const { calls, fetchImpl } = recorder([]);
+    await updateLabels(CONFIG, 'SONAR-1', {}, fast({ fetchImpl }));
+    expect(calls).toHaveLength(0);
   });
 });
 
