@@ -94,6 +94,38 @@ what makes "start at any step, auto-continue the rest" actually true for
 every step, not just the ones a workflow author remembered to wire a
 follow-on for.
 
+## A PR-scoped Sonar query cannot tell "untouched" from "fixed"
+
+Found live, not in review: the first real dispatch against a freshly-opened
+group-PR relabelled its Jira ticket `ready` before any fix had been
+attempted. The resolved-pass ("a group's ticket flips to `ready` once
+`findings` no longer reports it") was being fed a **PR-scoped** fetch — and
+a PR-scoped Sonar issue query only ever reflects that PR's own diff. A
+freshly-opened branch that hasn't touched the flagged file yet is absent
+from that query for exactly the same reason a genuinely fixed file would
+be; the two are indistinguishable from the result set alone.
+
+`#23` had already scoped the sweep to the calling PR's own `pr_number`,
+which fixed a real but different bug (cross-PR contamination once several
+pipeline-created PRs coexist) — it did not fix this one, because the false
+positive happens on a PR's *own* group, not someone else's.
+
+The fix (`#24`) is narrower than "use a better query": the resolved-pass
+now runs **only** for whole-project calls (`ctx.prNumber` unset — bulk
+onboarding's ticketing pass). A PR-scoped call (settle's per-PR outcome
+pass, remediate.yml's `ticket` job) can still comment on or flag a
+regression for a group that IS present in its own scan; it never declares
+one gone. This means a merged PR's ticket does not flip to `ready`
+automatically the moment it merges — only the next whole-project sweep
+(re-running `onboard-backlog`, today) catches it. Deliberate: an
+under-reported `ready` self-heals the next time anyone runs that sweep; a
+false `ready` is not caught by anything downstream at all, and by the time
+a human notices, the ticket has already told them the wrong thing.
+
+**Not solved**: nothing yet triggers that whole-project sweep automatically
+on a merge to `main`. A scheduled or `push`-triggered `onboard-backlog` run
+would close this; it is not built.
+
 ## What is accepted, not solved
 
 **A human filing a Jira ticket by hand has no way to generate the right
