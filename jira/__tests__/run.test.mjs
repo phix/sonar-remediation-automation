@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync, existsSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runJira, renderJiraReport, dispositionsFrom } from '../run.mjs';
-import { readPlan, planIndex, recordIssueKey, writePlan } from '../plan.mjs';
+import { readPlan, planIndex, recordIssueKey, recordPR, writePlan } from '../plan.mjs';
 import { groupFindings } from '../group.mjs';
 import { dispositionSummary } from '../../codemods/remediate.mjs';
 
@@ -309,6 +309,57 @@ describe('labels track live Sonar state, not pipeline progress', () => {
     expect(run.resolved).toBe(0);
     expect(calls.label).toHaveLength(0);
     expect(calls.comment).toHaveLength(0);
+  });
+
+  it('a PR-scoped call resolves the group that belongs to THAT pr_number', async () => {
+    const planPath = join(dir, 'plan.json');
+    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
+    let plan = recordIssueKey({ items: [] }, g, 'SONAR-7');
+    plan = recordPR(plan, g, 17);
+    writePlan(planPath, plan);
+
+    const { calls, options } = world({ issues: { 'SONAR-7': open('SONAR-7') } });
+    const run = await runJira([FINDINGS[0]], {
+      enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' },
+      ctx: { prNumber: '17' }
+    });
+    expect(run.resolved).toBe(1);
+    expect(calls.label).toHaveLength(1);
+  });
+
+  it('a PR-scoped call does NOT resolve a DIFFERENT PR\'s group just because it is absent from this scan', async () => {
+    // The bug the "one PR per group" flow would otherwise hit: PR #17's own
+    // scan naturally contains none of PR #23's findings either, and that
+    // must not read as "PR #23's group got fixed."
+    const planPath = join(dir, 'plan.json');
+    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
+    let plan = recordIssueKey({ items: [] }, g, 'SONAR-7');
+    plan = recordPR(plan, g, 23);
+    writePlan(planPath, plan);
+
+    const { calls, options } = world({ issues: { 'SONAR-7': open('SONAR-7') } });
+    const run = await runJira([FINDINGS[0]], {
+      enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' },
+      ctx: { prNumber: '17' }
+    });
+    expect(run.resolved).toBe(0);
+    expect(calls.label).toHaveLength(0);
+    expect(calls.comment).toHaveLength(0);
+  });
+
+  it('a whole-project call (no PR given) still sweeps every item, unscoped', async () => {
+    const planPath = join(dir, 'plan.json');
+    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
+    let plan = recordIssueKey({ items: [] }, g, 'SONAR-7');
+    plan = recordPR(plan, g, 999); // belongs to some other PR entirely
+    writePlan(planPath, plan);
+
+    const { calls, options } = world({ issues: { 'SONAR-7': open('SONAR-7') } });
+    const run = await runJira([FINDINGS[0]], {
+      enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' }
+      // no ctx.prNumber — a project-wide scan, e.g. bulk onboarding's ticketing pass
+    });
+    expect(run.resolved).toBe(1);
   });
 
   it('flips a resolved ticket back to needs-work when the finding regresses', async () => {
