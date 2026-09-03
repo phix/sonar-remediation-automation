@@ -247,6 +247,22 @@ export async function addComment(config, key, text, options = {}) {
 }
 
 /**
+ * Add/remove specific labels without clobbering whatever else is on the
+ * issue. `fields.labels` on a PUT replaces the whole array, which would erase
+ * a human's own labels the moment automation touched the ticket — the `update`
+ * verb's `{add}`/`{remove}` ops are the only way to change a subset.
+ *
+ * A no-op call (nothing to add or remove) skips the request rather than
+ * sending an empty `update: { labels: [] }`, which Jira accepts but which
+ * would be a request that changes nothing.
+ */
+export async function updateLabels(config, key, { add = [], remove = [] } = {}, options = {}) {
+  const ops = [...add.map((l) => ({ add: l })), ...remove.map((l) => ({ remove: l }))];
+  if (!ops.length) return {};
+  return request(config, 'PUT', `/issue/${encodeURIComponent(key)}`, { update: { labels: ops } }, options);
+}
+
+/**
  * Jira's status *category* is the portable question.
  *
  * §5.5 found four statuses here and specifies twelve; an office Jira will have

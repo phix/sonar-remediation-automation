@@ -16,6 +16,11 @@
     "prove:gates": "node codemods/agentic/prove-gates.mjs",
     "prove:templates": "node codemods/prove-templates.mjs",
     "jira": "node jira/run.mjs",
+    "jira:resume": "node jira/resume.mjs",
+    "jira:queue": "node jira/queue.mjs",
+    "jira:filter": "node jira/filter-findings.mjs",
+    "jira:groups": "node jira/groups.mjs",
+    "jira:record": "node jira/record.mjs",
     "teams": "node teams/notify.mjs",
     "settle": "node settle/run.mjs"
   },

@@ -72,3 +72,32 @@ export function dispositionFor(group, outcome) {
   }
   return null;
 }
+
+/**
+ * Posted once a later scan stops reporting the group at all — the only signal
+ * that is actually about *this* group's findings, rather than the PR's whole
+ * quality gate (which can stay red on an unrelated axis, e.g. new-code
+ * coverage, while every finding this ticket names is gone).
+ */
+export function resolvedComment(group, ctx = {}) {
+  const what = group?.rule ? ` (${group.rule}${group.module ? ` in ${group.module}` : ''})` : '';
+  const l = [`SonarQube no longer reports this${what} on the latest scan — marking **${ctx.readyLabel || 'Ready'}**.`];
+  if (ctx.prUrl) l.push(`Pull request: ${ctx.prUrl}`);
+  return l.join('\n\n');
+}
+
+/**
+ * Posted on a group whose findings are STILL reported after a remediation
+ * attempt ran — the failure-or-not-yet case, distinguished from
+ * `resolvedComment` by the fact that Sonar still names this group.
+ *
+ * @param {{state: 'ready'|'red', reason?: string}} verdict settle's classify() output
+ */
+export function verdictComment(group, verdict, ctx = {}) {
+  const l = [verdict.state === 'ready'
+    ? 'Remediation ran and the quality gate is green, but this finding is still reported — '
+      + 'not resolved by this pass.'
+    : `Remediation ran but the quality gate is still red: ${verdict.reason}`];
+  if (ctx.prUrl) l.push(`Pull request: ${ctx.prUrl}`);
+  return l.join('\n\n');
+}

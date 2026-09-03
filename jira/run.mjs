@@ -10,8 +10,21 @@
  * this switch would have been a rewrite — worth saying out loud, because it is
  * the design property that bought the option.
  *
- * So this is a separate entry point from `remediate.mjs`, run after it and
- * never before, and nothing downstream reads its result.
+ * ## The ticket exists before the work does, not after
+ *
+ * This runs as its own entry point *before* `remediate.mjs` and before any
+ * GitHub-side change lands — a group only needs `findings`, never a
+ * remediation outcome, to be filed. `remediation` here is optional precisely
+ * so that "file first" and "turn Jira on after remediation already ran" are
+ * the same code path: `dispositionsFrom(null)` is an empty map, so an
+ * early-stage call and a late one differ only in how much a ticket's body
+ * already knows, never in whether it runs. Nothing downstream *reads* this
+ * step's result and remediation never waits on it — optional and non-blocking
+ * stays true regardless of when it runs.
+ *
+ * The same entry point runs again after remediation, a push and a re-scan —
+ * see `ctx.verdict` below — to record the outcome on tickets that already
+ * exist, not to file new ones for work already done.
  *
  * ## Disabled is silent; enabled-but-unconfigured is red
  *
@@ -23,13 +36,16 @@
  * Usage:
  *   node jira/run.mjs <findings.json> [--enabled] [--plan plan.json]
  *                     [--pr N] [--pr-url URL] [--dispositions disp.json]
+ *                     [--verdict ready|red] [--reason TEXT]
  *                     [--dry-run] [--json out.json]
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-import { groupFindings } from './group.mjs';
-import { renderBody, summaryFor, dispositionFor } from './body.mjs';
-import { configFromEnv, createIssue, addComment, JiraUnavailable } from './client.mjs';
+import { groupFindings, NEEDS_WORK_LABEL, READY_LABEL } from './group.mjs';
+import { renderBody, summaryFor, dispositionFor, resolvedComment, verdictComment } from './body.mjs';
+import {
+  configFromEnv, createIssue, addComment, updateLabels, getIssue, isOpen, JiraUnavailable
+} from './client.mjs';
 import { resolveExisting } from './dedupe.mjs';
 import { readPlan, planIndex, recordIssueKey, writePlan } from './plan.mjs';
 import { writeBackGroup } from './writeback.mjs';
@@ -118,17 +134,28 @@ export async function runJira(findings, {
 
     if (existing.key) {
       deduped += 1;
-      // The existing ticket learns that the group is still live. Without this,
-      // a ticket filed three scans ago looks stale when it is in fact current,
-      // and "no duplicates" starts to read as "no news".
+      const planItem = plan.items?.find((i) => i.group_fingerprint === group.fingerprint);
+      // A regression: the resolved-pass below already marked this ticket
+      // `ready` on a scan that stopped reporting the group, and now a later
+      // scan reports it again. The label must not be left saying `ready`
+      // while `findings` — the thing it is supposed to reflect — disagrees.
+      const regressed = planItem?.status === 'Verified';
       if (!dryRun) {
         await addComment(config, existing.key,
-          `Still reported on the latest scan: ${group.findings.length} `
-          + `${group.rule} finding(s) in ${group.module}.`
+          (regressed ? 'Reopened — reported again after a previous scan showed it resolved: '
+            : 'Still reported on the latest scan: ')
+          + `${group.findings.length} ${group.rule} finding(s) in ${group.module}.`
           + (ctx.prUrl ? `\n\nPull request: ${ctx.prUrl}` : ''), options);
+        if (regressed) {
+          await updateLabels(config, existing.key, { add: [NEEDS_WORK_LABEL], remove: [READY_LABEL] }, options);
+        }
+        if (ctx.verdict) {
+          await addComment(config, existing.key, verdictComment(group, ctx.verdict, ctx), options);
+        }
       }
+      if (regressed) { planItem.status = 'Ticketed'; if (planPath) writePlan(planPath, plan); }
       tickets.push({ group: group.fingerprint, key: existing.key, action: 'deduped',
-        source: existing.source, note: existing.note });
+        source: existing.source, note: existing.note, regressed });
       log(`= ${group.key} -> ${existing.key} (${existing.source})`);
       continue;
     }
@@ -164,7 +191,40 @@ export async function runJira(findings, {
     log(`+ ${group.key} -> ${ticket.key}`);
   }
 
-  return { ran: true, tickets, created, deduped, groups: groups.length, writeBack, plan };
+  // Groups the plan ticketed before that `findings` — this scan — no longer
+  // reports at all. Absence from `findings` is the only trustworthy signal
+  // that a group is actually fixed: the PR's overall quality gate can stay
+  // red on an unrelated axis (new-code coverage, say) while every finding a
+  // given ticket names is gone, so gating this on the gate would leave a
+  // resolved ticket saying `needs-work` for a reason that has nothing to do
+  // with it.
+  const currentFingerprints = new Set(groups.map((g) => g.fingerprint));
+  const resolved = [];
+  for (const item of plan.items || []) {
+    if (!item.jira_issue_key || item.status === 'Verified') continue;
+    if (currentFingerprints.has(item.group_fingerprint)) continue;
+
+    if (dryRun) {
+      resolved.push({ group: item.group_fingerprint, key: item.jira_issue_key, action: 'would-resolve' });
+      continue;
+    }
+
+    // A ticket the plan still calls open may already be Done in Jira — a
+    // human closed it, say. Nothing to relabel or comment on in that case.
+    const issue = await getIssue(config, item.jira_issue_key, ['key', 'status'], options);
+    if (!issue || !isOpen(issue)) continue;
+
+    await updateLabels(config, item.jira_issue_key, { add: [READY_LABEL], remove: [NEEDS_WORK_LABEL] }, options);
+    await addComment(config, item.jira_issue_key,
+      resolvedComment({ rule: item.rule_key, module: item.module_prefix }, { prUrl: ctx.prUrl }), options);
+    item.status = 'Verified';
+    resolved.push({ group: item.group_fingerprint, key: item.jira_issue_key, action: 'resolved' });
+    log(`✓ ${item.group_fingerprint} -> ${item.jira_issue_key} (ready)`);
+  }
+  if (resolved.some((r) => r.action === 'resolved') && planPath) writePlan(planPath, plan);
+
+  return { ran: true, tickets, created, deduped, resolved: resolved.length, resolvedTickets: resolved,
+    groups: groups.length, writeBack, plan };
 }
 
 /** The PR comment, in the same shape the other stages report in. */
@@ -179,13 +239,20 @@ export function renderJiraReport(run) {
     return l.join('\n');
   }
 
-  l.push(`${run.groups} group(s): **${run.created} created**, **${run.deduped} already open**.`, '');
+  const resolvedCount = run.resolved || 0;
+  l.push(`${run.groups} group(s): **${run.created} created**, **${run.deduped} already open**`
+    + `${resolvedCount ? `, **${resolvedCount} now resolved**` : ''}.`, '');
   for (const t of run.tickets) {
     l.push(t.action === 'created'
-      ? `- \`${t.group}\` → **${t.key}** (new)`
+      ? `- \`${t.group}\` → **${t.key}** (new, labelled \`needs-work\`)`
       : t.action === 'deduped'
-        ? `- \`${t.group}\` → ${t.key} — already open, found via ${t.source}`
+        ? `- \`${t.group}\` → ${t.key} — ${t.regressed ? 'reopened, back to `needs-work`' : 'already open'}, found via ${t.source}`
         : `- \`${t.group}\` → would create \`${t.summary}\``);
+  }
+  for (const r of run.resolvedTickets || []) {
+    l.push(r.action === 'resolved'
+      ? `- \`${r.group}\` → ${r.key} — no longer reported, relabelled \`ready\``
+      : `- \`${r.group}\` → ${r.key} — would relabel \`ready\``);
   }
   l.push('');
 
@@ -203,7 +270,8 @@ export async function main(argv) {
   const findingsPath = args.find((a) => !a.startsWith('--'));
   if (!findingsPath) {
     console.error('usage: jira/run.mjs <findings.json> [--enabled] [--plan plan.json] '
-      + '[--pr N] [--pr-url URL] [--dispositions disp.json] [--dry-run] [--json out.json]');
+      + '[--pr N] [--pr-url URL] [--dispositions disp.json] '
+      + '[--verdict ready|red] [--reason TEXT] [--dry-run] [--json out.json]');
     return 2;
   }
   const flag = (name) => args.includes(`--${name}`);
@@ -216,6 +284,12 @@ export async function main(argv) {
   // disposition, rather than the step refusing to file them.
   const dispPath = val('dispositions');
   const remediation = dispPath ? JSON.parse(readFileSync(dispPath, 'utf8')) : null;
+
+  // settle's classify() verdict, for the second call — after remediation, a
+  // push and a re-scan — that records the outcome on tickets already filed.
+  // Absent on the first call, which runs before any of that has happened.
+  const verdictState = val('verdict');
+  const verdict = verdictState ? { state: verdictState, reason: val('reason') || '' } : null;
 
   let run;
   try {
@@ -230,7 +304,7 @@ export async function main(argv) {
         token: process.env.SONAR_TOKEN,
         readToken: process.env.SONAR_TOKEN_READ
       },
-      ctx: { prNumber: val('pr'), prUrl: val('pr-url') },
+      ctx: { prNumber: val('pr'), prUrl: val('pr-url'), verdict },
       log: (m) => console.log(m)
     });
   } catch (e) {

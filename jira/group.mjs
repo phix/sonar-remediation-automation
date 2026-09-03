@@ -42,6 +42,16 @@ export function projectLabel(projectKey) {
   return String(projectKey || '').replace(/[^A-Za-z0-9_-]/g, '-');
 }
 
+/**
+ * The two labels are mutually exclusive and reflect live Sonar state, not
+ * pipeline progress: a group only exists here because `findings` — the
+ * current scan's output — still contains it, so `needs-work` is the only
+ * correct label at grouping time. `run.mjs` is what flips a ticket to `ready`
+ * once a later scan stops reporting the group at all.
+ */
+export const NEEDS_WORK_LABEL = 'needs-work';
+export const READY_LABEL = 'ready';
+
 export function groupFindings(findings, { projectKey } = {}) {
   const groups = new Map();
   for (const f of findings) {
@@ -54,7 +64,7 @@ export function groupFindings(findings, { projectKey } = {}) {
         rule: f.rule,
         severity: f.severity || 'UNKNOWN',
         findings: [],
-        labels: [projectLabel(projectKey), fingerprint(key)].filter(Boolean)
+        labels: [projectLabel(projectKey), fingerprint(key), NEEDS_WORK_LABEL].filter(Boolean)
       });
     }
     groups.get(key).findings.push(f);

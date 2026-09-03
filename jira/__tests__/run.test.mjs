@@ -24,7 +24,7 @@ const FINDINGS = [
  * the crash window between creating a ticket and remembering it.
  */
 function world({ existingByLabel = {}, issues = {}, onSonarComment, sonarStatus = 200 } = {}) {
-  const calls = { create: [], search: [], get: [], comment: [], sonar: [], rules: [] };
+  const calls = { create: [], search: [], get: [], comment: [], commentBody: [], sonar: [], rules: [], label: [] };
   let n = 0;
   const fetchImpl = async (url, init) => {
     const body = init?.body;
@@ -46,6 +46,12 @@ function world({ existingByLabel = {}, issues = {}, onSonarComment, sonarStatus 
     }
     if (url.includes('/issue/') && url.includes('/comment')) {
       calls.comment.push(url);
+      calls.commentBody.push(JSON.parse(body).body);
+      return { ok: true, status: 204, text: async () => '' };
+    }
+    if (init?.method === 'PUT' && url.includes('/issue/')) {
+      const key = decodeURIComponent(url.split('/issue/')[1].split('?')[0]);
+      calls.label.push({ key, ...JSON.parse(body) });
       return { ok: true, status: 204, text: async () => '' };
     }
     if (init?.method === 'GET' || !init?.method) {
@@ -246,6 +252,112 @@ describe('the write-back is reported, never silently absent', () => {
     });
     expect(run.writeBack.written).toBe(3);
     expect(renderJiraReport(run)).toMatch(/3\/3 Sonar finding/);
+  });
+});
+
+describe('the ticket exists before the work does', () => {
+  it('files a ticket from findings alone, with no remediation outcome yet', async () => {
+    // The whole point: a call with no `remediation` must behave exactly like
+    // filing before any GitHub-side change has happened, not like a degraded
+    // form of the after-the-fact call.
+    const { calls, options } = world();
+    const run = await runJira([FINDINGS[2]], { enabled: true, config: CONFIGURED, options });
+    expect(run.created).toBe(1);
+    expect(calls.create[0].fields.description).not.toMatch(/Automation disposition/);
+  });
+
+  it('labels a freshly-filed ticket needs-work, because a live finding is why it exists', async () => {
+    const { calls, options } = world();
+    await runJira([FINDINGS[2]], { enabled: true, config: CONFIGURED, options });
+    expect(calls.create[0].fields.labels).toContain('needs-work');
+  });
+});
+
+describe('labels track live Sonar state, not pipeline progress', () => {
+  it('relabels ready and comments once a later scan stops reporting the group', async () => {
+    const planPath = join(dir, 'plan.json');
+    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
+    writePlan(planPath, recordIssueKey({ items: [] }, g, 'SONAR-7'));
+
+    const { calls, options } = world({ issues: { 'SONAR-7': open('SONAR-7') } });
+    // The next scan's findings no longer contain FINDINGS[2] at all.
+    const run = await runJira([FINDINGS[0]], {
+      enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' },
+      ctx: { prUrl: 'https://github.com/x/y/pull/2' }
+    });
+
+    expect(run.resolved).toBe(1);
+    expect(calls.label).toEqual([{ key: 'SONAR-7', update: { labels: [{ add: 'ready' }, { remove: 'needs-work' }] } }]);
+    expect(calls.commentBody[0]).toMatch(/no longer reports/);
+    expect(calls.commentBody[0]).toMatch(/pull\/2/);
+
+    const plan = JSON.parse(readFileSync(planPath, 'utf8'));
+    expect(plan.items.find((i) => i.jira_issue_key === 'SONAR-7').status).toBe('Verified');
+  });
+
+  it('does not touch a ticket that is already closed in Jira', async () => {
+    const planPath = join(dir, 'plan.json');
+    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
+    writePlan(planPath, recordIssueKey({ items: [] }, g, 'SONAR-7'));
+
+    const { calls, options } = world({
+      issues: { 'SONAR-7': { key: 'SONAR-7', fields: { status: { statusCategory: { key: 'done' } } } } }
+    });
+    const run = await runJira([FINDINGS[0]], {
+      enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' }
+    });
+    expect(run.resolved).toBe(0);
+    expect(calls.label).toHaveLength(0);
+    expect(calls.comment).toHaveLength(0);
+  });
+
+  it('flips a resolved ticket back to needs-work when the finding regresses', async () => {
+    const planPath = join(dir, 'plan.json');
+    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
+    const plan = recordIssueKey({ items: [] }, g, 'SONAR-7');
+    plan.items[0].status = 'Verified';
+    writePlan(planPath, plan);
+
+    const { calls, options } = world({ issues: { 'SONAR-7': open('SONAR-7') } });
+    const run = await runJira([FINDINGS[2]], {
+      enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' }
+    });
+
+    expect(run.tickets[0]).toMatchObject({ key: 'SONAR-7', action: 'deduped', regressed: true });
+    expect(calls.label).toEqual([{ key: 'SONAR-7', update: { labels: [{ add: 'needs-work' }, { remove: 'ready' }] } }]);
+    expect(calls.commentBody[0]).toMatch(/Reopened/);
+
+    const written = JSON.parse(readFileSync(planPath, 'utf8'));
+    expect(written.items[0].status).toBe('Ticketed');
+  });
+
+  it('a dry run reports what it would resolve without calling Jira', async () => {
+    const planPath = join(dir, 'plan.json');
+    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
+    writePlan(planPath, recordIssueKey({ items: [] }, g, 'SONAR-7'));
+
+    const { calls, options } = world();
+    const run = await runJira([FINDINGS[0]], {
+      enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' }, dryRun: true
+    });
+    expect(run.resolvedTickets).toEqual([{ group: g.fingerprint, key: 'SONAR-7', action: 'would-resolve' }]);
+    expect(calls.get).toHaveLength(0);
+    expect(calls.label).toHaveLength(0);
+  });
+});
+
+describe('a comment records the remediation outcome, not just "still reported"', () => {
+  it('appends a red verdict onto the still-open ticket', async () => {
+    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
+    const { calls, options } = world({ existingByLabel: { [g.fingerprint]: [open('SONAR-99')] } });
+    await runJira([FINDINGS[2]], {
+      enabled: true, config: CONFIGURED, options, sonar: { projectKey: 'p' },
+      ctx: { verdict: { state: 'red', reason: 'new-code coverage 6.9 < 80' } }
+    });
+    expect(calls.comment).toHaveLength(2); // "still reported" + the verdict note
+    expect(calls.commentBody[0]).toMatch(/Still reported/);
+    expect(calls.commentBody[1]).toMatch(/quality gate is still red/);
+    expect(calls.commentBody[1]).toMatch(/new-code coverage 6\.9 < 80/);
   });
 });
 

@@ -80,12 +80,20 @@ code isn't mergeable
 
 ### 3. Jira (optional, off by default)
 
-**What happens:** when enabled, one Jira ticket is created per finding group,
-deduplicated so re-runs update rather than duplicate.
+**What happens:** when enabled, one Jira ticket is created per finding group
+**before remediation touches anything**, labelled `needs-work`, deduplicated
+so re-runs update rather than duplicate. A later call — after remediation, a
+push and a re-scan — flips a ticket to `ready` and comments once Sonar stops
+reporting that group at all, or back to `needs-work` with a "reopened" comment
+if it regresses; it also drops a comment naming the remediation outcome
+(`docs/decisions/jira-needs-work-and-outcome-comments.md`).
 
 **Why:** Jira is the surface where a human team would track and audit the
-work. The demo usually skips it to keep the arc tight, but it exists to show
-the pipeline can feed a real workflow tool, not just a chat channel.
+work, so the ticket has to exist before there is anything to audit, and its
+label has to track what Sonar actually still reports rather than freezing at
+whatever it said when the ticket was filed. The demo usually skips Jira to
+keep the arc tight, but it exists to show the pipeline can feed a real
+workflow tool, not just a chat channel.
 
 ### 4. Remediate — the heart of the system
 
@@ -208,8 +216,17 @@ npm test                 # full unit suite (vitest)
 npm run codemods:apply   # deterministic fixers against a findings file
 npm run settle           # settle stage: node settle/run.mjs --project KEY --pr N [--auto-merge]
 npm run jira             # jira step
+npm run jira:resume      # where does one group already stand? --plan plan.json --fingerprint gf-x
+npm run jira:queue       # bulk-onboarding batch selection: findings.json --plan plan.json --max-concurrent N
+npm run jira:groups      # every group in a findings file, ticket key if one exists
+npm run jira:filter      # cut a findings file down to named group fingerprints
+npm run jira:record      # record a branch/PR/status onto the plan: branch|pr|status --plan plan.json --fingerprint gf-x
 npm run preflight        # environment / secrets preflight
 ```
+
+The multi-entry-point flow (bulk onboarding, tracking one finding before any
+PR exists, auto-continue) is `docs/decisions/multi-entry-point-flow.md`; the
+workflows that call these scripts live in the sandbox repo, not here.
 
 The remediation core deliberately never touches git — the workflow owns
 commits and pushes — which is exactly what makes the interesting half runnable
