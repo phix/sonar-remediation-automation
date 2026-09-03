@@ -198,11 +198,21 @@ export async function runJira(findings, {
   // given ticket names is gone, so gating this on the gate would leave a
   // resolved ticket saying `needs-work` for a reason that has nothing to do
   // with it.
+  // A PR-scoped call (ctx.prNumber set) only ever sees THAT PR's findings —
+  // sweeping every plan item against that narrow a view would mark a
+  // DIFFERENT PR's group "resolved" for no reason but being naturally
+  // absent from this PR's own diff. Harmless while there was ever only one
+  // PR in flight; wrong the moment "one PR per group" makes several
+  // pipeline-created PRs coexist (docs/decisions/multi-entry-point-flow.md).
+  // A whole-project call (no PR given, e.g. bulk onboarding's ticketing
+  // pass) still sweeps every item, which is the correct, original use case.
+  const scopePr = ctx.prNumber != null && ctx.prNumber !== '' ? Number(ctx.prNumber) : null;
   const currentFingerprints = new Set(groups.map((g) => g.fingerprint));
   const resolved = [];
   for (const item of plan.items || []) {
     if (!item.jira_issue_key || item.status === 'Verified') continue;
     if (currentFingerprints.has(item.group_fingerprint)) continue;
+    if (scopePr !== null && item.pr_number !== scopePr) continue;
 
     if (dryRun) {
       resolved.push({ group: item.group_fingerprint, key: item.jira_issue_key, action: 'would-resolve' });
