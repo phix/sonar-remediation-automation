@@ -311,7 +311,13 @@ describe('labels track live Sonar state, not pipeline progress', () => {
     expect(calls.comment).toHaveLength(0);
   });
 
-  it('a PR-scoped call resolves the group that belongs to THAT pr_number', async () => {
+  it('a PR-scoped call NEVER resolves anything, even its own group', async () => {
+    // Confirmed live (2026-09-03): a freshly-opened group-PR whose diff has
+    // not yet touched the flagged file is indistinguishable, from a
+    // PR-scoped issue listing alone, from one that genuinely fixed it —
+    // both are simply absent. A false "ready" on an unfixed finding is
+    // worse than a "ready" that arrives late via a whole-project sweep, so
+    // PR-scoped calls do not attempt this at all, regardless of whose PR.
     const planPath = join(dir, 'plan.json');
     const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
     let plan = recordIssueKey({ items: [] }, g, 'SONAR-7');
@@ -323,28 +329,12 @@ describe('labels track live Sonar state, not pipeline progress', () => {
       enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' },
       ctx: { prNumber: '17' }
     });
-    expect(run.resolved).toBe(1);
-    expect(calls.label).toHaveLength(1);
-  });
-
-  it('a PR-scoped call does NOT resolve a DIFFERENT PR\'s group just because it is absent from this scan', async () => {
-    // The bug the "one PR per group" flow would otherwise hit: PR #17's own
-    // scan naturally contains none of PR #23's findings either, and that
-    // must not read as "PR #23's group got fixed."
-    const planPath = join(dir, 'plan.json');
-    const [g] = groupFindings([FINDINGS[2]], { projectKey: 'p' });
-    let plan = recordIssueKey({ items: [] }, g, 'SONAR-7');
-    plan = recordPR(plan, g, 23);
-    writePlan(planPath, plan);
-
-    const { calls, options } = world({ issues: { 'SONAR-7': open('SONAR-7') } });
-    const run = await runJira([FINDINGS[0]], {
-      enabled: true, config: CONFIGURED, options, planPath, sonar: { projectKey: 'p' },
-      ctx: { prNumber: '17' }
-    });
     expect(run.resolved).toBe(0);
     expect(calls.label).toHaveLength(0);
     expect(calls.comment).toHaveLength(0);
+
+    const written = JSON.parse(readFileSync(planPath, 'utf8'));
+    expect(written.items[0].status).not.toBe('Verified');
   });
 
   it('a whole-project call (no PR given) still sweeps every item, unscoped', async () => {

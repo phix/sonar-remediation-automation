@@ -191,45 +191,46 @@ export async function runJira(findings, {
     log(`+ ${group.key} -> ${ticket.key}`);
   }
 
-  // Groups the plan ticketed before that `findings` — this scan — no longer
-  // reports at all. Absence from `findings` is the only trustworthy signal
-  // that a group is actually fixed: the PR's overall quality gate can stay
-  // red on an unrelated axis (new-code coverage, say) while every finding a
-  // given ticket names is gone, so gating this on the gate would leave a
-  // resolved ticket saying `needs-work` for a reason that has nothing to do
-  // with it.
-  // A PR-scoped call (ctx.prNumber set) only ever sees THAT PR's findings —
-  // sweeping every plan item against that narrow a view would mark a
-  // DIFFERENT PR's group "resolved" for no reason but being naturally
-  // absent from this PR's own diff. Harmless while there was ever only one
-  // PR in flight; wrong the moment "one PR per group" makes several
-  // pipeline-created PRs coexist (docs/decisions/multi-entry-point-flow.md).
-  // A whole-project call (no PR given, e.g. bulk onboarding's ticketing
-  // pass) still sweeps every item, which is the correct, original use case.
-  const scopePr = ctx.prNumber != null && ctx.prNumber !== '' ? Number(ctx.prNumber) : null;
-  const currentFingerprints = new Set(groups.map((g) => g.fingerprint));
+  // Groups the plan ticketed before that `findings` no longer reports at
+  // all. Absence is only a trustworthy "fixed" signal when `findings` is a
+  // WHOLE-PROJECT view (branch:main, say) — a PR-scoped fetch reflects that
+  // PR's own diff, and a file the PR has never touched is absent from it
+  // for exactly the same reason a genuinely fixed file would be: neither
+  // one shows up. Confirmed live (2026-09-03): a freshly-opened, not-yet-
+  // remediated group-PR whose diff had not yet touched the flagged file got
+  // its ticket relabelled `ready` on the very first PR-scoped check, before
+  // any fix had even been attempted. So this sweep runs ONLY for a
+  // whole-project call (`ctx.prNumber` unset) — bulk onboarding's ticketing
+  // pass, or a periodic branch:main sweep. A PR-scoped call (settle's
+  // per-PR outcome pass, remediate.yml's ticket job) never marks anything
+  // resolved; it can only comment on a group that IS still present via the
+  // dedupe/regression path above. The direction this errs in is
+  // deliberate — under-reporting "ready" is recoverable by a later sweep;
+  // a false "ready" is not caught by anything downstream at all.
   const resolved = [];
-  for (const item of plan.items || []) {
-    if (!item.jira_issue_key || item.status === 'Verified') continue;
-    if (currentFingerprints.has(item.group_fingerprint)) continue;
-    if (scopePr !== null && item.pr_number !== scopePr) continue;
+  if (ctx.prNumber == null || ctx.prNumber === '') {
+    const currentFingerprints = new Set(groups.map((g) => g.fingerprint));
+    for (const item of plan.items || []) {
+      if (!item.jira_issue_key || item.status === 'Verified') continue;
+      if (currentFingerprints.has(item.group_fingerprint)) continue;
 
-    if (dryRun) {
-      resolved.push({ group: item.group_fingerprint, key: item.jira_issue_key, action: 'would-resolve' });
-      continue;
+      if (dryRun) {
+        resolved.push({ group: item.group_fingerprint, key: item.jira_issue_key, action: 'would-resolve' });
+        continue;
+      }
+
+      // A ticket the plan still calls open may already be Done in Jira — a
+      // human closed it, say. Nothing to relabel or comment on in that case.
+      const issue = await getIssue(config, item.jira_issue_key, ['key', 'status'], options);
+      if (!issue || !isOpen(issue)) continue;
+
+      await updateLabels(config, item.jira_issue_key, { add: [READY_LABEL], remove: [NEEDS_WORK_LABEL] }, options);
+      await addComment(config, item.jira_issue_key,
+        resolvedComment({ rule: item.rule_key, module: item.module_prefix }, { prUrl: ctx.prUrl }), options);
+      item.status = 'Verified';
+      resolved.push({ group: item.group_fingerprint, key: item.jira_issue_key, action: 'resolved' });
+      log(`✓ ${item.group_fingerprint} -> ${item.jira_issue_key} (ready)`);
     }
-
-    // A ticket the plan still calls open may already be Done in Jira — a
-    // human closed it, say. Nothing to relabel or comment on in that case.
-    const issue = await getIssue(config, item.jira_issue_key, ['key', 'status'], options);
-    if (!issue || !isOpen(issue)) continue;
-
-    await updateLabels(config, item.jira_issue_key, { add: [READY_LABEL], remove: [NEEDS_WORK_LABEL] }, options);
-    await addComment(config, item.jira_issue_key,
-      resolvedComment({ rule: item.rule_key, module: item.module_prefix }, { prUrl: ctx.prUrl }), options);
-    item.status = 'Verified';
-    resolved.push({ group: item.group_fingerprint, key: item.jira_issue_key, action: 'resolved' });
-    log(`✓ ${item.group_fingerprint} -> ${item.jira_issue_key} (ready)`);
   }
   if (resolved.some((r) => r.action === 'resolved') && planPath) writePlan(planPath, plan);
 
