@@ -21,6 +21,7 @@
     "jira:filter": "node jira/filter-findings.mjs",
     "jira:groups": "node jira/groups.mjs",
     "jira:record": "node jira/record.mjs",
+    "codemods:tracked-findings": "node codemods/tracked-findings.mjs",
     "teams": "node teams/notify.mjs",
     "settle": "node settle/run.mjs"
   },
