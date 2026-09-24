@@ -242,5 +242,21 @@ Everywhere this document says `teams_notify` or "Teams message", read
 `telegram_notify` / "Telegram message" — the flag's tri-state semantics and
 default are unchanged. Teams was descoped on the M365 licensing wall, not on
 any property of this flow; the reasoning and the swap's mechanics are in
-[`notify-telegram-not-teams.md`](notify-telegram-not-teams.md). The office
+[`notify-pr-comment-only.md`](notify-pr-comment-only.md). The office
 handoff can swap it back through the same seam.
+
+**Correction, 2026-09-24: there is no notification channel, and never was a
+flag.** Telegram was removed outright — Nick's call, and the reasoning (including
+the docs-only PR that got a red message it had no business receiving) is in
+[`notify-pr-comment-only.md`](notify-pr-comment-only.md). Two things in the body
+above are now wrong in a way worth naming rather than quietly fixing:
+
+- **`teams_notify` / `telegram_notify` were never inputs.** §2's switch table and
+  §8 describe them as flags defaulting to `false`; no such input existed at any
+  point. Notification was enabled by the presence of the credential, so
+  "off" meant the secret was absent — and "on but unconfigured" was the red
+  state the tri-state guarded against.
+- **"One message" now means one comment.** The contract — a single terminal
+  verdict carrying a deterministic reason — is unchanged; the surface is the PR
+  itself. Auto-merge is likewise a repo variable (`AUTO_MERGE_ENABLED`), not the
+  `auto_merge` input this document names.

@@ -2,8 +2,8 @@
 
 Automated discovery, remediation, and verification of SonarQube findings via
 GitHub Actions — deterministic codemods first, a single tightly-policed LLM
-call last, Jira as the optional human workflow surface, and Telegram as the
-feedback channel.
+call last, Jira as the optional human workflow surface, and the pull request
+comment as the verdict.
 
 Built and proven against a synthetic sandbox
 ([`phix/sonar-sandbox-app`](https://github.com/phix/sonar-sandbox-app)) whose
@@ -30,14 +30,20 @@ demo-reset            sandbox restored to its pristine, smelly baseline
                       (capped, so the loop cannot run away)
     → settle          reads the gate and classifies: ready or red-because-X;
                       on ready, merges the PR automatically
-    → notify          ONE Telegram message at the terminal state
+    → verdict         ONE comment on the PR at the terminal state
     → demo-reset      one click back to the baseline; the demo is repeatable
 ```
 
-For the demo, the switches are on: `telegram_notify: true`, `auto_merge: true`
-(`jira` stays off unless you want to show the ticket surface). All three
-default to `false`, so the out-of-the-box pipeline is silent and never merges —
-the defaults are safe, not complete.
+The demo is designed to run with auto-merge on — that is the repo variable
+`AUTO_MERGE_ENABLED=true`, **which is not currently set on either repo**, so
+nothing merges itself today. `jira` stays off unless you want to show the ticket
+surface. Neither is on by default: the out-of-the-box pipeline never merges and
+files no tickets. The defaults are safe, not complete.
+
+There is **no notification channel**, by decision
+([`notify-pr-comment-only.md`](docs/decisions/notify-pr-comment-only.md)). The
+verdict is a comment on the PR the loop is scoped to, which is the one surface
+that cannot drift from the change it describes.
 
 ## The demo, step by step
 
@@ -61,7 +67,7 @@ pushes with a real repo token (`SANDBOX_REPO_TOKEN`), not the default
 silently ignored).
 
 **Why:** the PR is the unit of work for the entire system. Everything
-downstream — scan, remediation, settle, notify — is scoped to *this* PR and
+downstream — scan, remediation, settle, verdict — is scoped to *this* PR and
 *this* branch. The human's job ended the moment the PR opened.
 
 ### 2. Scan
@@ -160,20 +166,20 @@ with `{"status":"NONE"}` instead of an error, which settle classifies as
 undetermined rather than green
 ([why](docs/decisions/scan-status-scoping.md)).
 
-### 7. Notify
+### 7. The verdict
 
-**What happens:** exactly **one** Telegram message
-(`@SonarScannerFixBot`) at the terminal state: "ready" (and merged), or "red
-because *coverage on new code is 6.9%, below the 80% gate; 4 findings refused
-by policy*".
+**What happens:** exactly **one** comment on the PR, at the terminal state:
+"ready" (and merged), or "red because *coverage on new code is 6.9%, below the
+80% gate; 4 findings refused by policy*".
 
-**Why:** one message is the entire human contract from the loop's promise. Not
-a stream of per-step chatter — a single terminal verdict with a deterministic
-reason. Off is silent, but *on-and-unconfigured is red*: a notifier that
-silently skips the message it was asked to send is the exact failure mode this
-whole system exists to prevent. Telegram replaced Teams purely on M365
-licensing, one swapped step, same contract
-([decision](docs/decisions/notify-telegram-not-teams.md)).
+**Why:** one message is the entire human contract from the loop's promise. Not a
+stream of per-step chatter — a single terminal verdict with a deterministic
+reason. It lives on the PR rather than in a chat channel, deliberately: the PR is
+the thing the loop is scoped to, so the verdict cannot be read out of context,
+and there is no second surface that can disagree with the gate
+([decision](docs/decisions/notify-pr-comment-only.md)). This replaced a chat
+channel entirely on 2026-09-24 — Teams first (killed on M365 licensing), then
+Telegram, then no channel at all.
 
 ### 8. Reset again
 

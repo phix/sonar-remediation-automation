@@ -19,7 +19,7 @@ work happens in-session, by hand. Two consequences worth stating plainly:
 
 | Repo | Holds | Role |
 |---|---|---|
-| `phix/sonar-remediation-automation` — **this repo** | engine code, decision records | deterministic codemods first, one tightly-policed LLM call last; Jira, settle, telegram libraries. **Deliberately never touches git** — the workflow owns commits and pushes |
+| `phix/sonar-remediation-automation` — **this repo** | engine code, decision records | deterministic codemods first, one tightly-policed LLM call last; Jira and settle libraries. **Deliberately never touches git** — the workflow owns commits and pushes |
 | `phix/sonar-sandbox-app` | target code **and every workflow** | intentionally defective Angular 22 + Express 5 app; 32 planted findings; the CI that drives the pipeline |
 
 The pair exists because the same system is being built at Nick's work: this is a
@@ -44,7 +44,11 @@ scope (`docs/IMPLEMENTATION_PLAN.md` §3): a CI re-scan is the proof a fix worke
 | Renderer | [archify](https://github.com/tt-a1i/archify) checked out at pinned `ARCHIFY_SHA` (bump deliberately; its layout rules tighten between versions) |
 | On a PR | does **not** deploy — comments the topology delta instead |
 
-The automation repo has **no** Pages site (API returns 404) and **no** workflows.
+The automation repo has **no** Pages site (API returns 404) and **one** workflow:
+[`.github/workflows/sandbox-build.yml`](.github/workflows/sandbox-build.yml) —
+manual-only, two container shapes, re-proving the CI container contract on demand
+rather than only when a remediation happens to run. It is the evidence behind
+`docs/decisions/ci-container.md`.
 
 **The real runtime is GitHub Actions on `phix/sonar-sandbox-app`.** Everything
 that executes lives there: `01`–`06`, `98`, `99`, the `_`-prefixed reusable
@@ -57,14 +61,20 @@ Every external surface the pipeline touches:
 |---|---|
 | SonarQube Cloud | org `phix`, project `phix_sonar-sandbox-app`; analysis by `SonarSource/sonarqube-scan-action` |
 | Jira | `https://1337software.atlassian.net`, project `SONAR` (not `phix.atlassian.net` — that site returns an empty project list instead of an error) |
-| Telegram | bot `@SonarScannerFixBot` — **Teams is dead**, killed on M365 licensing; `docs/decisions/notify-telegram-not-teams.md` |
 | tinman | Ollama, OpenAI-compatible, `http://tinman:11434/v1`, model `qwen2.5-coder:7b`; LAN `192.168.1.217`, tailnet `100.102.1.50`. GitHub runners reach it by joining the tailnet in-job (`TS_OAUTH_CLIENT_ID` / `TS_OAUTH_SECRET`, ACL tag `tag:ci`) |
 | `automation-state` | orphan branch **in the sandbox repo** carrying `plan.json` between separately-triggered runs, so "which group already has a ticket/branch/PR" survives. Every job that reads or writes it needs `concurrency: group: automation-state` |
+
+**There is no notification channel.** Teams died on M365 licensing, Telegram
+replaced it, and Telegram was removed outright on 2026-09-24 — the terminal
+verdict is a comment on the PR
+([`docs/decisions/notify-pr-comment-only.md`](docs/decisions/notify-pr-comment-only.md)).
+Do not add a chat transport back without a decision record; the diagram suite
+asserts the edge is absent precisely so a silent re-introduction fails CI.
 
 CI secrets present (verified 2026-09-24):
 
 - automation repo — `JIRA_API_TOKEN`, `JIRA_USER_EMAIL`, `SANDBOX_REPO_TOKEN`, `SONAR_TOKEN_READ`
-- sandbox repo — `JIRA_API_TOKEN`, `JIRA_USER_EMAIL`, `SANDBOX_REPO_TOKEN`, `SONAR_TOKEN`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
+- sandbox repo — `JIRA_API_TOKEN`, `JIRA_USER_EMAIL`, `SANDBOX_REPO_TOKEN`, `SONAR_TOKEN`, `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`
 
 ## Derive state, never remember it
 
@@ -87,7 +97,6 @@ gh api repos/phix/sonar-sandbox-app/branches/main/protection \
 codemods/   policy.mjs (eligibility FIRST), registry.mjs, fixers/, agentic/ (LLM path), templates/
 jira/       client, dedupe, group, plan, queue, record, resume, writeback, filter-findings
 settle/     classify + gate + automerge — the terminal verdict, "red because <reason>"
-telegram/   the one terminal message
 scripts/    preflight, branch-contract, secrets.sh, sync-secrets.sh, verify-rule-keys.sh, verify-reset.mjs
 docs/       decisions/ (10 records — read the relevant one before re-deciding anything), source/, research/
 config/     secrets.md — names every credential, holds none
@@ -129,9 +138,10 @@ workflows over these lines:
 - `config/secrets.md` still lists the sandbox repo and `SONAR_PROJECT_KEY` as
   "not yet created" (issues #7 / #10). Both landed; the secrets above exist
   today.
-- `docs/IMPLEMENTATION_PLAN.md`'s header still names **Microsoft Teams** as the
-  feedback channel and says 10 findings reach Claude. The channel is Telegram and
-  the model is local (`qwen2.5-coder:7b` on tinman).
+- `docs/IMPLEMENTATION_PLAN.md`'s header is stale on the model, not the channel:
+  it says 10 findings reach Claude, but the agentic path is local
+  (`qwen2.5-coder:7b` on tinman). Its Teams/notify sections were corrected on
+  2026-09-24 — there is no notification channel at all.
 
 Two more that bite regardless of staleness:
 
@@ -146,8 +156,8 @@ Two more that bite regardless of staleness:
 
 - `README.md` — the promise, the demo walked step by step, the honest numbers.
 - `docs/decisions/` — 10 records: flow, CI container, cross-repo auth, LLM
-  endpoint transport, multi-entry-point flow, notify channel, dedupe order,
-  coverage, scan scoping, Jira labels/comments.
+  endpoint transport, multi-entry-point flow, why the verdict has no channel,
+  dedupe order, coverage, scan scoping, Jira labels/comments.
 - `docs/IMPLEMENTATION_PLAN.md` — what is built, what is decided, what is next.
 - Sandbox side: `phix/sonar-sandbox-app` → `README.md`,
   `.github/workflows/README.md` ("which workflow do I run"), `AGENTS.md`.

@@ -1,7 +1,7 @@
 # Sonar Remediation Sandbox — Implementation Plan
 
-**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · settle stage (`settle/`), notification library (`telegram/` — Teams descoped 2026-08-31 on the M365 licensing wall, see `docs/decisions/notify-telegram-not-teams.md`) and the reset verifier (`scripts/verify-reset.mjs`) landed, all unit-proven · #2 has its library half but still needs a live send proven by hand · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
-**Owner:** Nick Ratliff (`phix`) · **Feedback channel:** Microsoft Teams
+**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · settle stage (`settle/`, which posts the terminal verdict on the PR) and the reset verifier (`scripts/verify-reset.mjs`) landed, all unit-proven · #2 is **closed by removal** — there is no notification channel, see `docs/decisions/notify-pr-comment-only.md` · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
+**Owner:** Nick Ratliff (`phix`) · **Feedback channel:** none — the terminal verdict is a comment on the PR
 
 ---
 
@@ -30,20 +30,21 @@ PR opened or updated  (same-repo only — forks skipped with a non-green status)
                  happens only where no codemod exists for that rule.
                  Exactly one unit test per fix. Build. Test.
     → push: commit lands on the PR branch → re-scan fires automatically (capped)
-    → settle: green → OPTIONAL auto-merge, default OFF
+    → settle: green → OPTIONAL auto-merge (repo variable `AUTO_MERGE_ENABLED`)
               red   → merge stays blocked
-    → notify: OPTIONAL, default OFF — ONE Teams message at the terminal state:
-              "ready", or "red because <deterministic reason>"
+    → verdict: ONE comment on the PR at the terminal state:
+               "ready", or "red because <deterministic reason>"
     → reset: one click back to the pristine baseline
 ```
 
 | Input | Default | What it adds |
 |---|---|---|
 | `jira` | `false` | Jira tickets |
-| `telegram_notify` | `false` | the terminal Telegram message |
-| `auto_merge` | `false` | merge the PR when the gate goes green |
+| `AUTO_MERGE_ENABLED` (repo variable) | unset | merge the PR when the gate goes green |
 
-**Off by default means the out-of-the-box pipeline is silent and does not merge** — it scans, fixes, pushes and stops. That is the right default, and it means the experience above is the *switches-on* configuration. The defaults are safe, not complete.
+**Off by default means the out-of-the-box pipeline files no tickets and never merges** — it scans, fixes, pushes, comments the verdict and stops. That is the right default, and it means the experience above is the *switches-on* configuration. The defaults are safe, not complete.
+
+There is **no notification channel** and no flag for one: the verdict is the PR comment ([decision](decisions/notify-pr-comment-only.md)). The two `telegram_notify` / `auto_merge` inputs this table used to list never existed — see the correction in [`decisions/pr-remediation-flow.md`](decisions/pr-remediation-flow.md).
 
 **An agentic call is permitted at exactly one point in the entire system**: generating a fix for a finding whose rule has no deterministic codemod. Grouping, fingerprinting, eligibility, test generation for codemod fixes, the red-because reason, Jira bodies and the merge decision are all deterministic. On the sandbox catalogue, with the eligibility policy enforced, that is **18 findings fixed with zero LLM involvement, 10 reaching Claude, 4 refused by policy** — measured on 2026-08-30, not estimated. The catalogue's `role` field says 19/11/2 because it records which engine *could* fix a finding rather than whether policy *allows* it; see §4.7. The pipeline reports this ratio per run, because it is the project's whole economic argument.
 
@@ -81,6 +82,14 @@ gh auth status → Token scopes: 'gist', 'read:org', 'repo'
 There is no `workflow` scope, so **any push touching `.github/workflows/` will be rejected**. Fixed by `gh auth refresh -h github.com -s workflow -s read:project`. This is [#3](https://github.com/phix/sonar-remediation-automation/issues/3), and it gates every workflow file in the effort.
 
 ### 4.2 Classic Teams webhooks are dead
+
+**Resolved 2026-09-24: there is no notification channel at all.** The finding
+below still holds — this is why Teams could never have been the answer on a
+personal account — but the question it raised is closed rather than answered: the
+terminal verdict is a comment on the PR
+([decision](decisions/notify-pr-comment-only.md)). Issue
+[#2](https://github.com/phix/sonar-remediation-automation/issues/2) is closed by
+removal, not by proving a Power Automate flow.
 
 Office 365 connectors — the traditional Teams incoming webhook — were **disabled May 18–22, 2026**. The only supported path is now Power Automate Workflows ("When a Teams webhook request is received" → "Post card in a chat or channel").
 
@@ -159,7 +168,7 @@ Work is tracked as a [wayfinder map](https://github.com/phix/sonar-remediation-a
 
 | # | Ticket | Why only he can do it |
 |---|---|---|
-| [2](https://github.com/phix/sonar-remediation-automation/issues/2) | Prove the Microsoft Teams feedback channel | Power Automate flow creation, personal account |
+| [2](https://github.com/phix/sonar-remediation-automation/issues/2) | ~~Prove the Microsoft Teams feedback channel~~ **closed by removal 2026-09-24** — no channel; the verdict is the PR comment | was: Power Automate flow creation, personal account |
 | [13](https://github.com/phix/sonar-remediation-automation/issues/13) | Create and prove `SANDBOX_REPO_TOKEN` | Fine-grained PAT creation |
 | [10](https://github.com/phix/sonar-remediation-automation/issues/10) | Bind SonarQube Cloud and land a first real scan | **mostly done** — project imported as `phix_sonar-sandbox-app`, scan green locally. Remaining: issue `SONAR_TOKEN_READ`, and push `SONAR_TOKEN` into the **sandbox** repo's secrets so #15 can run it in CI |
 
@@ -196,7 +205,7 @@ PR #2               demo/planted-smells -> main, standing demo target
 - **#14 is new and inverts #9.** Sonar analyses a PR against *new code*, so 32 findings sitting on `main` report nothing. `main` has to be clean and the smells have to arrive as a PR. Non-destructive to fix, and none of the catalogue work is lost — it moves to a branch.
 - **#15, #16, #17 are new** and replace the not-yet-ticketed recon/plan/execute/verify chain from §6.
 - **#12 is narrowed.** `sonar-recon.yml` is superseded by #15; the normalization half survives, and no longer needs #10, since a real findings payload is already on disk.
-- **Teams has fallen out of the stated flow.** #2 is not cancelled — the PR comment may simply have replaced it, which would be the better answer. Needs an explicit yes or no.
+- **Teams has fallen out of the stated flow.** ~~#2 is not cancelled — the PR comment may simply have replaced it, which would be the better answer. Needs an explicit yes or no.~~ **Answered 2026-09-24: yes.** The PR comment replaced it, and then replaced Telegram after it — there is no notification channel ([decision](decisions/notify-pr-comment-only.md)). #2 is closed by removal.
 - **PR creation disappears entirely.** The automation no longer opens a PR; it pushes to one that already exists. This narrows what `SANDBOX_REPO_TOKEN` (#13) is for without changing the permissions it needs.
 - **The codemod library became the core deliverable** (#18). "Codemod first" was a cost optimisation; it is now an architectural constraint, so a rule without a fixer is a rule that costs money and latency on every PR that trips it.
 - **The agentic path points at Nick's own OpenLLM** (#19), through a configurable OpenAI-compatible seam rather than a hardcoded vendor. This supersedes the `ANTHROPIC_API_KEY` the original spec assumed, and gives the office a swap point rather than a rewrite.
@@ -217,7 +226,7 @@ Everything else graduated:
 | Planning workflow | [#17](https://github.com/phix/sonar-remediation-automation/issues/17) — and optional, default off |
 | Execute workflow | [#16](https://github.com/phix/sonar-remediation-automation/issues/16), split from [#18](https://github.com/phix/sonar-remediation-automation/issues/18) codemods and [#19](https://github.com/phix/sonar-remediation-automation/issues/19) agentic |
 | Retry/escalation workflow | folded into #16's guards |
-| Teams notification action | [#2](https://github.com/phix/sonar-remediation-automation/issues/2) — one terminal message, optional |
+| Terminal verdict | the settle PR comment — no notification channel, no ticket ([decision](decisions/notify-pr-comment-only.md), closes [#2](https://github.com/phix/sonar-remediation-automation/issues/2)) |
 | `reset-sandbox.yml` | [#20](https://github.com/phix/sonar-remediation-automation/issues/20) |
 
 That graduation is the method working, not scope growth: each became statable the moment the frontier reached it.
@@ -240,7 +249,7 @@ The abstraction pass is a ticket, not an afterthought. What has to become parame
 
 - Sonar host, organisation, project key — Cloud here, likely self-hosted Server there.
 - Jira base URL, project key, and the **status model gap**. The source state model (§7 of [the Jira doc](source/jira_workflow_state_model.md)) assumes twelve statuses including `Auto Remediation Running` and `Superseded`. A default free Jira Cloud project has roughly three. #5 records what's realistically available and what a real Jira workflow config would need — that difference is exactly what Nick's Jira admin will need to hear.
-- Notification transport — Power Automate here, possibly a corporate connector there.
+- Notification transport — **nothing to parameterise here any more**: the verdict is the PR comment, and the seam that once made a chat transport swappable went with it. If the office wants a channel, it is their decision to make, and the one property to carry across is that on-and-unconfigured must be red, never a silent skip.
 - Cross-repo auth — a fine-grained PAT here, plausibly a GitHub App at organisation scale (#7 records the trade-off).
 - Eligibility policy — the allowlist of auto-fixable rules will differ per codebase and per risk appetite.
 
