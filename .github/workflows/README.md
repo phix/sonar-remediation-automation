@@ -15,8 +15,8 @@ CI container contract on demand). Full step-by-step with rationale:
 | 3 | Scan | `sonar-pr-scan.yml` (auto, on PR) | 32 findings, 16 groups; required check `gate` goes **red** (new-code coverage) |
 | 4 | Remediate | `remediate.yml` (auto) | Policy refuses 4 → codemods fix 18 → LLM fixes the eligible rest (≤2 attempts); 1 test per fix; bot commit pushed |
 | 5 | Re-scan | `sonar-pr-scan.yml` (auto, on push; capped at 2 bot commits) | Gate re-read with fixes applied |
-| 6 | Settle | `settle` job in `sonar-pr-scan.yml` | `ready` → **merges automatically**; `red` → merge stays blocked, reason named |
-| 7 | Notify | "Tell Telegram" step, same job | ONE Telegram message: "ready" or "red because ⟨reason⟩" |
+| 6 | Settle | `settle` job in `sonar-pr-scan.yml` | `ready` → merges automatically **if** the repo variable `AUTO_MERGE_ENABLED=true` (unset today, so merges stay manual); `red` → merge stays blocked, reason named |
+| 7 | Verdict | Same `settle` job | ONE comment on the PR: "ready" or "red because ⟨reason⟩". No notification channel — see [`notify-pr-comment-only.md`](../../docs/decisions/notify-pr-comment-only.md) |
 | 8 | Reset | `demo-reset.yml` | Back to step 1 — the demo is a loop |
 
 Human input: two button clicks (1 and 2). Everything else is automatic.

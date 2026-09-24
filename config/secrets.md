@@ -35,11 +35,16 @@ Where every credential lives, and why it lives there. **No secret values appear 
 | `JIRA_API_TOKEN` | [id.atlassian.com](https://id.atlassian.com/manage-profile/security/api-tokens) — **classic, unscoped** | plan + retry workflows |
 | `SONAR_TOKEN` | SonarQube Cloud → My Account → Security | the scan action |
 | `SONAR_TOKEN_READ` | as above, separate token | recon (least privilege, spec §18.2) |
-| `TELEGRAM_BOT_TOKEN` | [@BotFather](https://t.me/botfather) → `/newbot` (issue #2 — Teams descoped, see `docs/decisions/notify-telegram-not-teams.md`) | the settle notify step |
-| `TELEGRAM_CHAT_ID` | `getUpdates` after messaging the bot once — numeric, useless without the token, but kept alongside it so one pattern covers both | the settle notify step |
 | `SANDBOX_REPO_TOKEN` | fine-grained PAT or GitHub App (issue #7) | cross-repo branch + PR |
 
 **Two Sonar tokens, deliberately.** The scanner must submit analysis; recon only reads issues. One token doing both is a privilege the recon job never needs, and the verification script probes whether the read token is genuinely read-only.
+
+**There is no notification credential, because there is no notification channel.**
+`TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` were removed on 2026-09-24 (see
+`docs/decisions/notify-pr-comment-only.md`); the terminal verdict is a comment on
+the PR. Do not re-add a chat webhook here without a decision record — and if one
+is ever added, the two-repo layout matters: notification secrets belong on the
+repo whose workflow sends them, which is `phix/sonar-sandbox-app`.
 
 ## Local use
 

@@ -133,7 +133,12 @@ secrets.delete('GITHUB_TOKEN');
 // "$X" ]`) would make the answer depend on how a step happened to be written.
 // The workflow says so out loud:
 //
-//   # preflight: optional-secret TELEGRAM_BOT_TOKEN
+//   # preflight: optional-secret SOME_SECRET
+//
+// No workflow currently declares one. Telegram's annotation was the last, and it
+// went with the channel on 2026-09-24. The mechanism stays: whether a secret is
+// optional is a fact about a step that only its author can declare, and the next
+// genuinely-optional secret should not have to re-invent this.
 const optionalSecrets = new Set(
   [...rawWorkflow.matchAll(/#\s*preflight:\s*optional-secret\s+([A-Z0-9_]+)/g)].map((m) => m[1])
 );
