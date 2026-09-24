@@ -120,7 +120,12 @@ workflows over these lines:
 
 - `docs/decisions/cross-repo-auth.md` still says **"the automation repo holds the
   workflows"**. It does not — they moved to the sandbox (see this repo's README).
-  The branch-protection half of that doc is still accurate.
+  Its branch-protection half has drifted too: it documents `enforce_admins: false`
+  and justifies that with "the one-click reset force-pushes `main` back to
+  `v0-pristine`". **Measured 2026-09-24: `enforce_admins` is `true`** (protection
+  binds admins), and `06 - reset the demo` force-pushes `demo/planted-smells` and
+  explicitly never touches `main`. Do not read that doc's table as current; read
+  the live protection API instead, as the sandbox `AGENTS.md` does.
 - `config/secrets.md` still lists the sandbox repo and `SONAR_PROJECT_KEY` as
   "not yet created" (issues #7 / #10). Both landed; the secrets above exist
   today.
