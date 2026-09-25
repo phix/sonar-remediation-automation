@@ -118,6 +118,40 @@ Anonymous returns `[]`, which is correct and is the control: it proves the field
 
 `scripts/verify-api-contracts.sh` now probes both `SONAR_TOKEN` and `SONAR_TOKEN_READ` this way and reports each. **The analysis token is the one that decides**, because it is what the remediation workflow actually holds.
 
+### `additionalFields` is a closed list of nine values, and `tags` is not one of them
+
+**Measured 2026-09-25.** `additionalFields` is not a free-form "which fields do you want" parameter. `GET /api/webservices/list?q=issues` — the API describing itself, which is the authority — gives the complete set:
+
+```
+["_all", "comments", "languages", "actionPlans", "rules",
+ "ruleDescriptionContextKey", "transitions", "actions", "users"]
+```
+
+Anything else is a **hard 400**, not an ignored parameter:
+
+```
+$ curl -s -G https://sonarcloud.io/api/issues/search \
+    --data-urlencode issues=AaBPgi7EREXdXm6pmYiE --data-urlencode additionalFields=tags
+{"errors":[{"msg":"Value of parameter 'additionalFields' (tags) must be one of:
+ [_all, comments, languages, actionPlans, rules, ruleDescriptionContextKey,
+  transitions, actions, users]"}]}
+```
+
+**`tags` is returned by default**, so it never needed to be asked for — an anonymous `issues=<key>` search carries `"tags": []` on every issue.
+
+This is worth a section rather than a footnote because of the failure *shape*: reading tags precedes `set_tags` in the outcome write-back, but the outcome **comment is posted first**, so a 400 here loses only the tag while the finding still appears annotated. It reads like success, and nothing downstream detects it. The lesson generalises — where a step is additive after a step that is not, a failure in the additive one is invisible, and only a contract probe or an assertion on the request catches it.
+
+### `set_tags` — the write side of the same feature
+
+`GET /api/webservices/list?q=issues` gives it two parameters:
+
+| Parameter | Required | Semantics |
+|---|---|---|
+| `issue` | yes | issue key |
+| `tags` | no | comma-separated; **all tags are removed if it is empty or absent** |
+
+That "replaces everything" semantic is the reason the outcome write-back reads the current tags first and *refuses to write when that read fails*: a best-effort write after a failed read would silently delete tags the pipeline never set.
+
 ### Fingerprinting — use Sonar's `hash`, not the line number
 
 Spec §8.1 proposes fingerprinting on `repository + project + rule_key + file_path + line + message`. **Line number is the weak link**: every edit above a finding shifts it, so the same defect fingerprints differently after any unrelated change, and stale-detection produces false churn.

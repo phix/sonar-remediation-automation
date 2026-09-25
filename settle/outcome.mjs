@@ -163,10 +163,30 @@ export function outcomeComment({ ticketKey, state, reason }) {
     + 'Recorded automatically by the Sonar remediation pipeline.';
 }
 
-/** Current tags, so setting ours does not silently drop somebody else's. */
+/**
+ * Current tags, so setting ours does not silently drop somebody else's.
+ *
+ * ## `additionalFields` must NOT be used here — measured 2026-09-25
+ *
+ * The obvious call is `additionalFields=tags`, and it is wrong: `tags` is not
+ * one of the nine legal values, and Sonar answers **HTTP 400** rather than
+ * ignoring it:
+ *
+ *   Value of parameter 'additionalFields' (tags) must be one of:
+ *   [_all, comments, languages, actionPlans, rules, ruleDescriptionContextKey,
+ *    transitions, actions, users]
+ *
+ * That 400 is the dangerous shape. The comment is posted first, so the outcome
+ * still appears on the finding and only the TAG is lost — which reads like
+ * success from the outside. `api/issues/search` returns `tags` by default
+ * (verified: an anonymous `issues=<key>` response carries `"tags": []`), so the
+ * parameter is simply omitted.
+ *
+ * The authority is `GET /api/webservices/list?q=issues`, which is where both
+ * the legal values and `set_tags`'s parameters were read from.
+ */
 export async function fetchTags(issueKey, { token, host = DEFAULT_HOST, fetchImpl = globalThis.fetch } = {}) {
-  const url = `${host}/api/issues/search?issues=${encodeURIComponent(issueKey)}`
-    + '&additionalFields=tags&ps=1';
+  const url = `${host}/api/issues/search?issues=${encodeURIComponent(issueKey)}`;
   try {
     const res = await fetchImpl(url, {
       headers: {
