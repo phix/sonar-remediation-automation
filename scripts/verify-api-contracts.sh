@@ -156,6 +156,40 @@ else
     esac
   done
 
+  # --- the tags contract `settle/outcome.mjs` depends on ---
+  #
+  # `tags` is NOT a legal `additionalFields` value: it is a hard 400, not an
+  # ignored parameter. That is a dangerous shape here, because the outcome
+  # COMMENT is posted before the tag is set — so a 400 on the tag lookup loses
+  # only the tag while the finding still looks annotated, and nothing
+  # downstream notices. Tags come back by default instead.
+  #
+  # Both halves are asserted, and this probe exists precisely because the
+  # failure is invisible without one. Measured 2026-09-25: the legal values are
+  # [_all, comments, languages, actionPlans, rules, ruleDescriptionContextKey,
+  # transitions, actions, users] — from `GET /api/webservices/list?q=issues`,
+  # which is also where `set_tags`'s parameters (`issue`, `tags`) were read.
+  probe_issue=$(curl "${SH[@]}" -G "$SB/issues/search" \
+    --data-urlencode "componentKeys=${SONAR_PROJECT_KEY}" \
+    --data-urlencode "organization=${SONAR_ORG}" \
+    --data-urlencode "resolved=false" --data-urlencode "ps=1" \
+    | jq -r '.issues[0].key // empty')
+  if [ -z "$probe_issue" ]; then
+    skip "tags contract — no unresolved issue in ${SONAR_PROJECT_KEY} to probe against"
+  else
+    code=$(curl -s -o /dev/null -w '%{http_code}' "${SH[@]}" -G "$SB/issues/search" \
+           --data-urlencode "issues=${probe_issue}" --data-urlencode "additionalFields=tags")
+    [ "$code" = "400" ] \
+      && ok "\`additionalFields=tags\` → HTTP 400 as expected — the outcome write-back must NOT send it" \
+      || bad "\`additionalFields=tags\` → HTTP $code, not 400: Sonar's contract changed. \`settle/outcome.mjs\`'s tag lookup assumed this is rejected; re-read \`/api/webservices/list\`"
+
+    by_default=$(curl "${SH[@]}" -G "$SB/issues/search" \
+      --data-urlencode "issues=${probe_issue}" | jq '.issues[0] | has("tags")')
+    [ "$by_default" = "true" ] \
+      && ok "tags come back by default on \`issues=<key>\` → no \`additionalFields\` needed" \
+      || bad "no \`tags\` field on a default issue search — \`settle/outcome.mjs\` cannot preserve existing tags before \`set_tags\` replaces them"
+  fi
+
   # Quality gate
   qg=$(curl "${SH[@]}" -G "$SB/qualitygates/project_status" --data-urlencode "projectKey=${SONAR_PROJECT_KEY}")
   st=$(echo "$qg" | jq -r '.projectStatus.status // empty')

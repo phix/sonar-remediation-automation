@@ -255,6 +255,41 @@ describe('writing it onto the finding', () => {
     expect(out.outcome).toBe('failed');
     expect(out.reason).toMatch(/ECONNRESET/);
   });
+
+  // The call that was wrong once. Measured 2026-09-25 against
+  // GET /api/webservices/list?q=issues: additionalFields accepts only
+  // [_all, comments, languages, actionPlans, rules, ruleDescriptionContextKey,
+  // transitions, actions, users]. "tags" is a 400, not a silently-ignored
+  // parameter — and because the comment is posted FIRST, that failure surfaced
+  // only as a missing tag, which reads like success from the outside. Tags come
+  // back by default, so asking for them is the bug.
+  it('does not send additionalFields to read tags, which Sonar answers with a 400', async () => {
+    const { calls, fetchImpl } = responder();
+    await recordOutcomeOne(KEY, { state: REMEDIATED, reason: 'gone' }, { token: 't', fetchImpl });
+
+    const lookup = calls.find((c) => c.url.includes('/api/issues/search'));
+    expect(lookup).toBeDefined();
+    expect(lookup.url).not.toContain('additionalFields');
+  });
+
+  it('bails without clobbering tags it could not read', async () => {
+    // set_tags REPLACES the whole list, so writing before a successful read
+    // would delete somebody else's tags — this failure has to be safe rather
+    // than best-effort.
+    const calls = [];
+    const out = await recordOutcomeOne(KEY, { state: REMEDIATED }, {
+      token: 't',
+      fetchImpl: async (url) => {
+        calls.push(url);
+        if (url.includes('add_comment')) return { ok: true, status: 200, text: async () => '{}' };
+        return { ok: false, status: 400, text: async () => 'bad param' };
+      }
+    });
+
+    expect(out.outcome).toBe('failed');
+    expect(out.step).toBe('read_tags');
+    expect(calls.some((u) => u.includes('set_tags'))).toBe(false);
+  });
 });
 
 describe('recording a group', () => {
