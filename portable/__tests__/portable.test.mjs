@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseConfig, plan, PolicyError } from '../lib/plan.mjs';
+import { applyPlan, expand } from '../lib/apply.mjs';
 import { fromFixture, fromSonar } from '../lib/findings.mjs';
 import { comment } from '../lib/verdict.mjs';
 import { openEgressLog, proposeFix, resolveSecret, assertApprovedDataClass, GatewayError } from '../lib/gateway.mjs';
@@ -155,7 +156,7 @@ describe('the verdict goes on the artifact', () => {
     const text = comment({ plan: plan(findings(), config) });
     expect(text).toContain('| fixed deterministically | 3 |');
     expect(text).toContain('| refused by policy | 3 |');
-    expect(text).toContain('`src/main/java/com/example/security/TokenVerifier.java:21`');
+    expect(text).toContain(`\`src/main/java/com/example/security/TokenVerifier.java:21\``);
     expect(text).toContain('Policy `enterprise-remediation-1.0`');
   });
 
@@ -166,5 +167,113 @@ describe('the verdict goes on the artifact', () => {
     });
     expect(text).toContain('3 of 8 finding(s) still reported');
     expect(text).toContain('a green suite cannot establish that a smell is gone');
+  });
+
+  it('reports what was applied, and marks the fixes nothing checked', () => {
+    const applied = {
+      totals: { applied: 2, 'already-clean': 1 },
+      results: [
+        { outcome: 'applied', file: 'api/src/reports/summary.js', line: 8, rule: 'javascript:S3504', verified: true },
+        { outcome: 'applied', file: 'api/src/legacy.js', line: 3, rule: 'javascript:S1854', verified: false }
+      ]
+    };
+    const text = comment({ plan: plan(findings(), config), applied });
+    expect(text).toContain('**Applied this pass:** 2 fix(es)');
+    expect(text).toContain('`api/src/reports/summary.js:8` — `javascript:S3504` — verified by its own check');
+    expect(text).toContain('unverified: no per-fix check is registered');
+  });
+});
+
+describe('the apply half runs only what the plan allowed, and only when it can prove it', () => {
+  const built = () => plan(findings(), config);
+  // The Java example registers commands but no verifiers, so these cases supply
+  // their own contract: check the file, fix the file.
+  const verifying = {
+    codemods: {
+      'java:S1481': { command: ['fix', '{file}'], verifyCommand: ['check', '{file}'] },
+      'java:S1128': { command: ['fix', '{file}'], verifyCommand: ['check', '{file}'] }
+    }
+  };
+
+  it('never invokes a command for a refused, model or capped finding', () => {
+    const result = applyPlan(built(), verifying, { run: () => ({ status: 0 }) });
+    expect(result.totals.skipped).toBe(5); // 2 model + 3 refused
+    expect(result.totals.applied).toBeUndefined();
+  });
+
+  it('counts a fix as applied only once the verifier flips from red to green', () => {
+    const fixed = new Set();
+    const run = (argv) => {
+      const [command, file] = argv;
+      if (command === 'check') return { status: fixed.has(file) ? 0 : 1 };
+      fixed.add(file);
+      return { status: 0 };
+    };
+
+    const result = applyPlan(built(), verifying, { run });
+    // All three codemod entries live in one file, and one command fixes that
+    // file: the second and third findings are reported, not double-counted.
+    expect(result.totals.applied).toBe(1);
+    expect(result.totals['already-clean']).toBe(2);
+    expect(result.results.find((r) => r.outcome === 'applied').verified).toBe(true);
+  });
+
+  it('refuses to call a fix applied when its check cannot discriminate', () => {
+    const result = applyPlan(built(), verifying, { run: () => ({ status: 0 }) });
+    expect(result.totals.applied).toBeUndefined();
+    expect(result.totals['already-clean']).toBe(3);
+    expect(result.results[0].reason).toContain('cannot discriminate');
+  });
+
+  it('treats a non-zero fix exit as informational when the verifier flips green', () => {
+    // Measured on the first real run: `eslint --fix` exits 1 while unrelated
+    // rules still fire, on a file it just fixed. The verifier is the verdict.
+    const fixed = new Set();
+    const run = (argv) => {
+      const [command, file] = argv;
+      if (command === 'check') return { status: fixed.has(file) ? 0 : 1 };
+      fixed.add(file);
+      return { status: 1, stderr: 'other rules still fire\n' };
+    };
+
+    const result = applyPlan(built(), verifying, { run });
+    expect(result.totals.failed).toBeUndefined();
+    expect(result.totals.applied).toBe(1);
+    expect(result.results.find((r) => r.outcome === 'applied').fixStatus).toBe(1);
+  });
+
+  it('reports a failed command instead of a quiet green when nothing can verify it', () => {
+    const run = () => ({ status: 2, stderr: 'boom\n' });
+    // The Java example registers commands but no verifier, so the exit status is
+    // the only signal there is.
+    const result = applyPlan(built(), config, { run });
+    expect(result.totals.failed).toBe(3);
+    expect(result.results[0].reason).toContain('exited 2: boom');
+  });
+
+  it('fails a finding whose verifier still reports it after the fix', () => {
+    const run = (argv) => ({ status: argv[0] === 'fix' ? 0 : 1 });
+    const result = applyPlan(built(), verifying, { run });
+    expect(result.totals.failed).toBe(3);
+    expect(result.results[0].reason).toContain('the verifier exited 1 after the fix');
+  });
+
+  it('marks a fix unverified rather than claiming proof it does not have', () => {
+    const result = applyPlan(built(), config, { run: () => ({ status: 0 }) });
+    const applied = result.results.filter((r) => r.outcome === 'applied');
+    expect(applied).toHaveLength(3);
+    expect(applied.every((r) => r.verified === false)).toBe(true);
+  });
+
+  it('runs nothing at all in a dry run', () => {
+    const calls = [];
+    const result = applyPlan(built(), verifying, { dryRun: true, run: (argv) => { calls.push(argv); return { status: 0 }; } });
+    expect(calls).toHaveLength(0);
+    expect(result.totals.planned).toBe(3);
+  });
+
+  it('substitutes placeholders per argument, so a path is data and never syntax', () => {
+    expect(expand(['fix', '{file}', '{nope}', '{configDir}'], { file: 'a b; rm -rf.js' }, { configDir: '/cfg' }))
+      .toEqual(['fix', 'a b; rm -rf.js', '{nope}', '/cfg']);
   });
 });

@@ -1,19 +1,27 @@
 #!/usr/bin/env node
 /**
- * The credential-free entry point.
+ * The entry point, in two halves.
  *
- *   node portable/cli.mjs plan --config portable/config/example.json
- *   node portable/cli.mjs plan --config <cfg> --sonar-live --pull-request 42   # needs SONAR_TOKEN
+ *   node portable/cli.mjs plan  --config portable/config/example.json
+ *   node portable/cli.mjs apply --config <cfg> --plan plan.json [--dry-run]
  *   node portable/cli.mjs comment --plan plan.json
  *
- * `plan` reads, decides and prints. It fixes nothing and pushes nothing — which
- * is the whole reason it can run in an environment where credentials, network
- * access and change approval have not arrived yet. Applying a plan is the CI's
- * job, and the branches/PR half is the part that needs the approvals.
+ * `plan` reads and decides; it needs no credentials and touches nothing. That is
+ * what makes it runnable in an environment where network access and change
+ * approval have not arrived yet. `apply` executes the plan's registered commands
+ * in the current working directory — so run it *from the repository being
+ * remediated*, with the config naming that repository's own fixers. It still
+ * commits nothing and pushes nothing: branches, tests and pull requests are CI
+ * work, and they are the part that needs the approvals.
+ *
+ *   cd <target repo> && node <engine>/portable/cli.mjs plan  --config <abs cfg> --out plan.json
+ *   cd <target repo> && node <engine>/portable/cli.mjs apply --config <abs cfg> --plan plan.json
  */
 import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readConfig, plan as buildPlan } from './lib/plan.mjs';
+import { applyPlan } from './lib/apply.mjs';
 import { fromFixture, fromSonar } from './lib/findings.mjs';
 import { comment } from './lib/verdict.mjs';
 
@@ -26,7 +34,9 @@ const { values, positionals } = parseArgs({
     'pull-request': { type: 'string' },
     branch: { type: 'string' },
     plan: { type: 'string' },
-    out: { type: 'string' }
+    applied: { type: 'string' },
+    out: { type: 'string' },
+    'dry-run': { type: 'boolean', default: false }
   }
 });
 
@@ -59,11 +69,28 @@ if (verb === 'plan') {
   const text = `${JSON.stringify(built, null, 2)}\n`;
   if (values.out) writeFileSync(values.out, text);
   process.stdout.write(text);
+} else if (verb === 'apply') {
+  if (!values.config) fail('apply needs --config <file>');
+  if (!values.plan) fail('apply needs --plan <file>');
+  const config = readConfig(values.config);
+  const built = JSON.parse(readFileSync(values.plan, 'utf8'));
+  const result = applyPlan(built, config, {
+    dryRun: values['dry-run'],
+    cwd: process.cwd(),
+    configDir: dirname(resolve(values.config))
+  });
+  const text = `${JSON.stringify(result, null, 2)}\n`;
+  if (values.out) writeFileSync(values.out, text);
+  process.stdout.write(text);
+  // A failed command is a red run; a skip or an already-clean finding is not.
+  if (result.totals.failed) process.exitCode = 1;
 } else if (verb === 'comment') {
   if (!values.plan) fail('comment needs --plan <file>');
   const built = JSON.parse(readFileSync(values.plan, 'utf8'));
-  process.stdout.write(`${comment({ plan: built })}\n`);
+  const applied = values.applied ? JSON.parse(readFileSync(values.applied, 'utf8')) : undefined;
+  process.stdout.write(`${comment({ plan: built, applied })}\n`);
 } else {
   fail('usage: cli.mjs plan --config <file> [--findings <file> | --sonar-live] [--out <file>]'
-    + '\n       cli.mjs comment --plan <file>');
+    + '\n       cli.mjs apply --config <file> --plan <file> [--dry-run] [--out <file>]'
+    + '\n       cli.mjs comment --plan <file> [--applied <file>]');
 }

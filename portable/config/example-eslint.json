@@ -1,0 +1,33 @@
+{
+  "policyVersion": "enterprise-remediation-1.0",
+  "policy": {
+    "protectedPaths": ["api/src/auth/", "web/src/app/auth/"],
+    "refusedRules": [],
+    "editableExtensions": [".js", ".mjs", ".ts"],
+    "maxFindingsPerPass": 50,
+    "maxAttemptsPerFinding": 2
+  },
+  "codemods": {
+    "javascript:S3504": {
+      "command": ["npx", "eslint", "--fix", "--config", "eslint.smells.config.mjs", "{file}"],
+      "verifyCommand": ["node", "{configDir}/../tools/eslint-rule-absent.mjs", "--config", "eslint.smells.config.mjs", "--sonar-rule", "javascript:S3504", "--file", "{file}"],
+      "note": "The repository's own linter as the codemod (no-var -> let/const). The verifier is the same analyzer, so it fails before the fix and passes after — a check that cannot discriminate is refused rather than trusted."
+    },
+    "typescript:S3504": {
+      "command": ["npx", "eslint", "--fix", "--config", "eslint.smells.config.mjs", "{file}"],
+      "verifyCommand": ["node", "{configDir}/../tools/eslint-rule-absent.mjs", "--config", "eslint.smells.config.mjs", "--sonar-rule", "typescript:S3504", "--file", "{file}"],
+      "note": "Same rule, TypeScript side. Note that `sonarjs/unused-import` has no autofix in this plugin, which is why S1128 is absent here: a rule with no honest codemod belongs on the model path, not in a map that pretends."
+    }
+  },
+  "sonar": {
+    "host": "https://sonarcloud.io",
+    "projectKey": "example-org_example-app"
+  },
+  "gateway": {
+    "endpoint": "https://model-gateway.internal.example/v1/chat/completions",
+    "model": "approved-coder-1",
+    "secretRef": "env:MODEL_GATEWAY_TOKEN",
+    "approvedDataClasses": ["source-file", "finding-metadata"],
+    "maxOutputTokens": 2000
+  }
+}

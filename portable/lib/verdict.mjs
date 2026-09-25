@@ -10,7 +10,7 @@
 
 const line = (entry) => `- \`${entry.file}:${entry.line ?? '?'}\` — \`${entry.rule}\`: ${entry.reason}`;
 
-export function comment({ plan, scan } = {}) {
+export function comment({ plan, applied, scan } = {}) {
   if (!plan) throw new Error('comment() needs a plan');
 
   const total = plan.totals || {};
@@ -43,6 +43,15 @@ export function comment({ plan, scan } = {}) {
   }
   if (model.length) {
     out.push('', '**Awaiting the model** (the residue the codemods could not cover):', ...model.map(line));
+  }
+  if (applied) {
+    const counts = applied.totals || {};
+    const fixes = (applied.results || []).filter((r) => r.outcome === 'applied');
+    out.push('', `**Applied this pass:** ${counts.applied || 0} fix(es)`
+      + `${counts['already-clean'] ? `, ${counts['already-clean']} already clean — one command can resolve every finding of that rule in a file` : ''}`
+      + `${counts.failed ? `, **${counts.failed} failed**` : ''}.`,
+    ...fixes.map((f) => `- \`${f.file}:${f.line}\` — \`${f.rule}\``
+      + `${f.verified ? ' — verified by its own check' : ' — unverified: no per-fix check is registered'}`));
   }
   if (scan) {
     out.push(
