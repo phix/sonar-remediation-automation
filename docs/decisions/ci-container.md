@@ -15,6 +15,8 @@ Nick asked for *"a very generic docker container to initialize, download the sou
 
 The heavy path is where Nick wants to watch a CI job behave like a real one: pull a base image that knows nothing about the project, install the toolchain, clone the source, build, test, scan. The light paths only ever need node and jq, and making them pay a full bootstrap on every run buys nothing.
 
+**Not to be confused with the app's own image.** This record is about what the *job* runs in. `Dockerfile` at the sandbox repo root builds the *app*, and the container gate (`verify/container.mjs`) builds and boots it to prove the real entry point starts — a different artifact with a different purpose ([decision](container-gate.md)).
+
 ## Why not the other options
 
 | Option | Rejected because |

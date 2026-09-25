@@ -95,19 +95,27 @@ gh api repos/phix/sonar-sandbox-app/branches/main/protection \
 
 ```
 codemods/   policy.mjs (eligibility FIRST), registry.mjs, fixers/, agentic/ (LLM path), templates/
-jira/       client, dedupe, group, plan, queue, record, resume, writeback, filter-findings
-settle/     classify + gate + automerge — the terminal verdict, "red because <reason>"
+jira/       client, dedupe, group, naming, plan, queue, record, resume, writeback, filter-findings
+settle/     classify + gate + automerge — the terminal verdict, "red because <reason>";
+            outcome.mjs writes remediated/not back onto each Sonar finding
+verify/     container.mjs — builds the app's image, boots it, proves it serves
 scripts/    preflight, branch-contract, secrets.sh, sync-secrets.sh, verify-rule-keys.sh, verify-reset.mjs
-docs/       decisions/ (10 records — read the relevant one before re-deciding anything), source/, research/
+docs/       decisions/ (11 records — read the relevant one before re-deciding anything), source/, research/
 config/     secrets.md — names every credential, holds none
 ```
 
 The order inside a remediation pass *is* the design: **policy → codemods → LLM →
-one generated test per fix → build → full test suite.** On the sandbox catalogue
-that is 18 findings fixed with zero LLM involvement, 4 refused by policy
-(`api/src/auth/` is off-limits), the residue agentic. A refusal by name is
-product behaviour, not a failure — do not "fix" it by loosening the policy or the
+one generated test per fix → build → full test suite → container gate.** On the
+sandbox catalogue that is 18 findings fixed with zero LLM involvement, 4 refused
+by policy (`api/src/auth/` is off-limits), the residue agentic. A refusal by name
+is product behaviour, not a failure — do not "fix" it by loosening the policy or the
 attempt cap.
+
+**Green is a gate on the push, not proof of a fix.** The suite and the container
+gate establish that the app still compiles, behaves and starts; neither can
+establish that a smell is gone. Sonar's re-scan answers that, after the push —
+read [`docs/decisions/container-gate.md`](docs/decisions/container-gate.md) before
+re-litigating any of it.
 
 ## Commands
 
@@ -115,6 +123,8 @@ attempt cap.
 npm test                 # vitest, whole engine
 npm run preflight        # environment / secrets check
 npm run settle -- --project phix_sonar-sandbox-app --pr N [--auto-merge]
+npm run settle:outcome -- --findings f.json [--before pre.json] [--plan plan.json]
+npm run container-gate -- --root DIR [--port N]   # build the app image, boot it, prove it serves
 npm run jira:groups -- findings.json     # every group + ticket key, if any
 npm run codemods:tracked-findings -- ...  # remediate from Sonar state, no live diff
 ```
@@ -155,9 +165,10 @@ Two more that bite regardless of staleness:
 ## Where to go deeper
 
 - `README.md` — the promise, the demo walked step by step, the honest numbers.
-- `docs/decisions/` — 10 records: flow, CI container, cross-repo auth, LLM
-  endpoint transport, multi-entry-point flow, why the verdict has no channel,
-  dedupe order, coverage, scan scoping, Jira labels/comments.
+- `docs/decisions/` — 11 records: flow, CI container, the container gate and
+  outcome write-back, cross-repo auth, LLM endpoint transport, multi-entry-point
+  flow, why the verdict has no channel, dedupe order, coverage, scan scoping,
+  Jira labels/comments.
 - `docs/IMPLEMENTATION_PLAN.md` — what is built, what is decided, what is next.
 - Sandbox side: `phix/sonar-sandbox-app` → `README.md`,
   `.github/workflows/README.md` ("which workflow do I run"), `AGENTS.md`.

@@ -25,12 +25,14 @@ demo-reset            sandbox restored to its pristine, smelly baseline
                       required check, so red genuinely blocks the merge
     → (jira)          optional — one ticket per finding group
     → remediate       policy decides eligibility FIRST, codemods fix
-                      everything they can, the LLM only gets what's left
+                      everything they can, the LLM only gets what's left;
+                      then the suite, then the app's image is built and booted
     → push            bot commit lands on the PR branch → re-scan fires
                       (capped, so the loop cannot run away)
     → settle          reads the gate and classifies: ready or red-because-X;
                       on ready, merges the PR automatically
-    → verdict         ONE comment on the PR at the terminal state
+    → verdict         ONE comment on the PR at the terminal state, plus the
+                      outcome (remediated / not) written onto each Sonar finding
     → demo-reset      one click back to the baseline; the demo is repeatable
 ```
 
@@ -123,6 +125,10 @@ pass. The order inside that pass *is* the design:
 4. **Exactly one unit test per fix**, generated from the file *as it was
    before the edit*, so the test characterises the behaviour being preserved.
    Then the whole project is built and the full test suite runs.
+5. **The app's image is built and booted.** A green suite is not enough on its
+   own: `npm test` drives Express in-process through supertest and never runs
+   `api/src/server.js`, so a broken entry point passes every test. The container
+   gate requires `/health` and `/api/orders` to answer from the real process.
 
 **Why this order:** deciding eligibility before any fixer runs means a policy
 refusal can never be argued away by an engine that happens to know how to make
@@ -132,6 +138,13 @@ predictable path only ever handles the residue — the demo's headline is that
 policy, attempt caps, and a network ACL. A refusal is a first-class outcome:
 the pipeline would rather tell you "I won't fix this, and here is why" than
 ship an unverifiable change.
+
+**What "green" does and does not mean.** The suite and the container gate are
+gates on the *push*: they establish that the app still compiles, behaves and
+starts. Neither can establish that a smell is gone — a smell is not behaviour,
+and a suite is green for the wrong reason when nothing covers the edit. That
+question belongs to Sonar's re-scan, after the push, and
+[the decision](docs/decisions/container-gate.md) records why.
 
 ### 5. Push and re-scan
 
@@ -165,6 +178,14 @@ after the gate has been re-read post-remediation — and the gate is fetched
 with `{"status":"NONE"}` instead of an error, which settle classifies as
 undetermined rather than green
 ([why](docs/decisions/scan-status-scoping.md)).
+
+**And the finding is told what happened to it.** Settle comments the outcome on
+every Sonar finding in the group and tags it `remediated` or `not-remediated`,
+alongside the existing Jira-key back-link. A group counts as remediated only
+when remediation *changed the file* **and** Sonar *stopped reporting it* —
+absence alone is a confirmed live false positive on a PR-scoped fetch, and a
+change alone need not have removed anything
+([the rule and both lies](docs/decisions/container-gate.md)).
 
 ### 7. The verdict
 
@@ -221,6 +242,9 @@ saying no, out loud, instead of merging something it cannot verify.
 npm test                 # full unit suite (vitest)
 npm run codemods:apply   # deterministic fixers against a findings file
 npm run settle           # settle stage: node settle/run.mjs --project KEY --pr N [--auto-merge]
+npm run settle:outcome   # write remediated/not onto each Sonar finding: --findings f.json [--before pre.json] [--plan plan.json]
+npm run container-gate   # build the app's image, boot it, prove it serves: --root DIR [--port N]
+npm run naming           # the branch and PR names for a group: branch|title --fingerprint gf-x [--jira-key SONAR-42]
 npm run jira             # jira step
 npm run jira:resume      # where does one group already stand? --plan plan.json --fingerprint gf-x
 npm run jira:queue       # bulk-onboarding batch selection: findings.json --plan plan.json --max-concurrent N
