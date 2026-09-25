@@ -22,7 +22,10 @@
     "jira:groups": "node jira/groups.mjs",
     "jira:record": "node jira/record.mjs",
     "codemods:tracked-findings": "node codemods/tracked-findings.mjs",
-    "settle": "node settle/run.mjs"
+    "settle": "node settle/run.mjs",
+    "settle:outcome": "node settle/outcome.mjs",
+    "container-gate": "node verify/container.mjs",
+    "naming": "node jira/naming.mjs"
   },
   "dependencies": {
     "jscodeshift": "^17.3.0",

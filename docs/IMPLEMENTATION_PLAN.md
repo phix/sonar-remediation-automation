@@ -1,6 +1,6 @@
 # Sonar Remediation Sandbox — Implementation Plan
 
-**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · settle stage (`settle/`, which posts the terminal verdict on the PR) and the reset verifier (`scripts/verify-reset.mjs`) landed, all unit-proven · #2 is **closed by removal** — there is no notification channel, see `docs/decisions/notify-pr-comment-only.md` · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
+**Status:** building · 7 of 19 tickets resolved, #15 and #18 substantially done · settle stage (`settle/`, which posts the terminal verdict on the PR) and the reset verifier (`scripts/verify-reset.mjs`) landed, all unit-proven · **added 2026-09-24:** the container gate (`verify/container.mjs` — the built app must boot, not just pass its suite), the outcome write-back onto the Sonar finding (`settle/outcome.mjs`), the Jira key in branch and PR names (`jira/naming.mjs`), and `06 - reset the demo` gained `scope: everything` so the whole scenario resets, not just the demo branch — see [`decisions/container-gate.md`](decisions/container-gate.md) · #2 is **closed by removal** — there is no notification channel, see `docs/decisions/notify-pr-comment-only.md` · **Map:** [phix/sonar-remediation-automation#1](https://github.com/phix/sonar-remediation-automation/issues/1)
 **Owner:** Nick Ratliff (`phix`) · **Feedback channel:** none — the terminal verdict is a comment on the PR
 
 ---

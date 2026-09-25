@@ -12,6 +12,11 @@ docs/research/api-contracts-verified.md
 # generated fresh by each remediation run; the workflow writes then reads it
 remediation-comment.md
 agentic-comment.md
+# same class: the fixed-name report each of these writes on every run, so a
+# laptop invocation cannot leave a committable file behind
+settle-comment.md
+container-gate-comment.md
+outcome-comment.md
 
 # The subagent harness checks out full worktrees here. Never commit one.
 .claude/worktrees/
