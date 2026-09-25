@@ -1,0 +1,32 @@
+{
+  "policyVersion": "enterprise-remediation-1.0",
+  "fixtures": { "findings": "portable/fixtures/findings.json" },
+  "policy": {
+    "protectedPaths": ["src/main/java/com/example/security/"],
+    "refusedRules": ["java:S2076"],
+    "editableExtensions": [".java", ".ts", ".mjs"],
+    "maxFindingsPerPass": 20,
+    "maxAttemptsPerFinding": 2
+  },
+  "codemods": {
+    "java:S1481": {
+      "command": ["mvn", "-q", "org.openrewrite.maven:rewrite-maven-plugin:run", "-Drewrite.activeRecipes=org.openrewrite.java.RemoveUnusedLocalVariables"],
+      "note": "OpenRewrite recipe: unused local variable. No model involvement."
+    },
+    "java:S1128": {
+      "command": ["mvn", "-q", "org.openrewrite.maven:rewrite-maven-plugin:run", "-Drewrite.activeRecipes=org.openrewrite.java.RemoveUnusedImports"],
+      "note": "OpenRewrite recipe: unused import. No model involvement."
+    }
+  },
+  "sonar": {
+    "host": "https://sonarqube.internal.example",
+    "projectKey": "example-app"
+  },
+  "gateway": {
+    "endpoint": "https://model-gateway.internal.example/v1/chat/completions",
+    "model": "approved-coder-1",
+    "secretRef": "env:MODEL_GATEWAY_TOKEN",
+    "approvedDataClasses": ["source-file", "finding-metadata"],
+    "maxOutputTokens": 2000
+  }
+}
