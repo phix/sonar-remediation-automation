@@ -1,7 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   decideOutcomes, looksLikeIssueKey, outcomeComment, recordOutcomeOne, recordOutcomes,
-  renderOutcomeReport, REMEDIATED, NOT_REMEDIATED, REMEDIATED_TAG, NOT_REMEDIATED_TAG
+  renderOutcomeReport, main, REMEDIATED, NOT_REMEDIATED, REMEDIATED_TAG, NOT_REMEDIATED_TAG
 } from '../outcome.mjs';
 import { groupFindings } from '../../jira/group.mjs';
 
@@ -289,6 +292,64 @@ describe('writing it onto the finding', () => {
     expect(out.outcome).toBe('failed');
     expect(out.step).toBe('read_tags');
     expect(calls.some((u) => u.includes('set_tags'))).toBe(false);
+  });
+});
+
+describe('the entry point refuses to state an outcome it never earned', () => {
+  let cwd;
+  let dir;
+  let token;
+  beforeEach(() => {
+    cwd = process.cwd();
+    dir = mkdtempSync(join(tmpdir(), 'outcome-'));
+    process.chdir(dir);
+    // The entry point reads the token from the environment, as the workflow
+    // provides it. Without one every write short-circuits as `forbidden`, so
+    // the positive case would pass for the wrong reason.
+    token = process.env.SONAR_TOKEN;
+    process.env.SONAR_TOKEN = 'test-token';
+  });
+  afterEach(() => {
+    process.chdir(cwd);
+    if (token === undefined) delete process.env.SONAR_TOKEN;
+    else process.env.SONAR_TOKEN = token;
+  });
+
+  const argv = (...a) => ['node', 'outcome.mjs', ...a];
+  const write = (name, value) => {
+    const p = join(process.cwd(), name);
+    writeFileSync(p, JSON.stringify(value));
+    return p;
+  };
+
+  it('records nothing at all when no remediation was attempted', async () => {
+    // The demo-PR case: 32 findings still reported, nobody has run a
+    // remediation. Without this guard every one of them is commented and
+    // tagged `not-remediated`, which reads as "we tried and failed" — a claim
+    // the pipeline never earned, written into the system it treats as truth.
+    const findings = write('findings.json', [F(), F({ key: 'AY8xSecondKeyHere00', line: 9 })]);
+    let calls = 0;
+    const code = await main(argv('--findings', findings, '--pr', '10'), {
+      fetchImpl: async () => { calls += 1; return { ok: true, status: 200 }; }
+    });
+    expect(code).toBe(0);
+    expect(calls).toBe(0);
+  });
+
+  it('still records when a remediation record is present', async () => {
+    const findings = write('findings.json', [F()]);
+    const dispositions = write('dispositions.json', changed());
+    const calls = [];
+    const code = await main(argv('--findings', findings, '--dispositions', dispositions, '--pr', '7'), {
+      fetchImpl: async (url, init = {}) => {
+        calls.push({ url, method: init.method || 'GET' });
+        if (url.includes('add_comment')) return { ok: true, status: 200, text: async () => '{}' };
+        if (url.includes('set_tags')) return { ok: true, status: 200, text: async () => '{}' };
+        return { ok: true, status: 200, json: async () => ({ issues: [{ tags: [] }] }) };
+      }
+    });
+    expect(code).toBe(0);
+    expect(calls.some((c) => c.url.includes('add_comment'))).toBe(true);
   });
 });
 
