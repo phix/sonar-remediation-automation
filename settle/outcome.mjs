@@ -320,7 +320,7 @@ export function renderOutcomeReport(summary) {
   return l.join('\n');
 }
 
-export async function main(argv) {
+export async function main(argv, deps = {}) {
   const args = argv.slice(2);
   const val = (n, d) => {
     const i = args.indexOf(`--${n}`);
@@ -336,17 +336,40 @@ export async function main(argv) {
     return 2;
   }
 
+  // NO REMEDIATION RECORD MEANS NO REMEDIATION WAS ATTEMPTED, so there is no
+  // outcome to record and this writes nothing.
+  //
+  // Without this guard the module states an outcome it never earned. Every
+  // finding Sonar still reports would be commented and tagged
+  // `not-remediated` on a PR nobody has tried to remediate — a fresh demo PR,
+  // say — which reads as "we attempted this and failed" when the truth is
+  // "nobody has looked at it yet". A wrong claim written into the one system
+  // this whole pipeline treats as the source of truth is worse than silence,
+  // and the tag is sticky enough to outlive the confusion.
+  //
+  // An attempt is exactly what leaves a `dispositionSummary()` behind
+  // (remediate.yml uploads it), so its absence is a reliable signal rather
+  // than a proxy for one.
+  const dispositions = readJson(val('dispositions'));
+  if (!dispositions) {
+    console.log('no remediation record for this PR — no attempt was made, so no outcome is recorded.');
+    return 0;
+  }
+
   const outcomes = decideOutcomes({
     findings: readJson(findingsPath) || [],
     before: readJson(val('before')) || [],
     plan: readJson(planPath),
-    dispositions: readJson(val('dispositions')),
+    dispositions,
     pr: val('pr', null)
   });
 
   const summary = await recordOutcomes(outcomes, {
     token: process.env.SONAR_TOKEN || process.env.SONAR_TOKEN_READ,
-    host: process.env.SONAR_HOST || DEFAULT_HOST
+    host: process.env.SONAR_HOST || DEFAULT_HOST,
+    // Injectable so a unit test can exercise the entry point without a network,
+    // the same seam `settle/run.mjs` exposes as `deps`.
+    ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {})
   });
 
   for (const o of outcomes) {
