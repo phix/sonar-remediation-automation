@@ -1,0 +1,69 @@
+{
+  "projectKey": "example-app",
+  "issues": [
+    {
+      "key": "AY-1",
+      "rule": "java:S1481",
+      "component": "example-app:src/main/java/com/example/OrderService.java",
+      "line": 42,
+      "severity": "MAJOR",
+      "message": "Remove this unused \"total\" local variable."
+    },
+    {
+      "key": "AY-2",
+      "rule": "java:S1481",
+      "component": "example-app:src/main/java/com/example/OrderService.java",
+      "line": 77,
+      "severity": "MAJOR",
+      "message": "Remove this unused \"pending\" local variable."
+    },
+    {
+      "key": "AY-3",
+      "rule": "java:S1128",
+      "component": "example-app:src/main/java/com/example/OrderService.java",
+      "line": 3,
+      "severity": "MINOR",
+      "message": "Remove this unused import 'java.util.Optional'."
+    },
+    {
+      "key": "AY-4",
+      "rule": "java:S1854",
+      "component": "example-app:src/main/java/com/example/PricingEngine.java",
+      "line": 88,
+      "severity": "MAJOR",
+      "message": "Remove this useless assignment to local variable \"rate\"."
+    },
+    {
+      "key": "AY-5",
+      "rule": "java:S3776",
+      "component": "example-app:src/main/java/com/example/PricingEngine.java",
+      "line": 12,
+      "severity": "CRITICAL",
+      "message": "Refactor this method to reduce its Cognitive Complexity from 24 to the 15 allowed."
+    },
+    {
+      "key": "AY-6",
+      "rule": "java:S1481",
+      "component": "example-app:src/main/java/com/example/security/TokenVerifier.java",
+      "line": 21,
+      "severity": "MAJOR",
+      "message": "Remove this unused \"audience\" local variable."
+    },
+    {
+      "key": "AY-7",
+      "rule": "java:S2076",
+      "component": "example-app:src/main/java/com/example/ReportRunner.java",
+      "line": 60,
+      "severity": "BLOCKER",
+      "message": "Make sure that executing this OS command is safe here."
+    },
+    {
+      "key": "AY-8",
+      "rule": "kotlin:S1481",
+      "component": "example-app:buildSrc/src/main/kotlin/Deps.kt",
+      "line": 9,
+      "severity": "MINOR",
+      "message": "Remove this unused \"version\" local variable."
+    }
+  ]
+}
